@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
@@ -17,6 +18,13 @@ import (
 // BasicCollector implements ContextCollector with filesystem + tool detection.
 type BasicCollector struct {
 	toolsToCheck []string
+	cache        toolCache
+}
+
+type toolCache struct {
+	mu        sync.Mutex
+	available []string
+	expiresAt time.Time
 }
 
 func NewBasicCollector() *BasicCollector {
@@ -45,10 +53,15 @@ func (c *BasicCollector) Collect(ctx context.Context, cfg domain.Config, req dom
 	}
 
 	var kubeStatus *domain.KubeStatus
-	if shouldCollect(cfg.Context.IncludeK8s) {
+	if shouldCollect(cfg.Context.IncludeK8s) || req.WithK8sInfo {
 		if status := collectKubeInfo(ctx); status != nil {
 			kubeStatus = status
 		}
+	}
+
+	var dockerStatus *domain.DockerStatus
+	if containsTool(tools, "docker") {
+		dockerStatus = collectDockerInfo(ctx)
 	}
 
 	envVars := map[string]string{}
@@ -69,10 +82,19 @@ func (c *BasicCollector) Collect(ctx context.Context, cfg domain.Config, req dom
 		Git:             gitStatus,
 		Kubernetes:      kubeStatus,
 		EnvironmentVars: envVars,
+		Docker:          dockerStatus,
+		Telemetry: domain.TelemetryInfo{
+			ToolCacheExpires: c.cache.expiresAt.Format(time.RFC3339),
+		},
 	}, nil
 }
 
 func (c *BasicCollector) detectTools() []string {
+	c.cache.mu.Lock()
+	defer c.cache.mu.Unlock()
+	if time.Now().Before(c.cache.expiresAt) && len(c.cache.available) > 0 {
+		return c.cache.available
+	}
 	var available []string
 	for _, tool := range c.toolsToCheck {
 		if _, err := exec.LookPath(tool); err == nil {
@@ -80,6 +102,8 @@ func (c *BasicCollector) detectTools() []string {
 		}
 	}
 	sort.Strings(available)
+	c.cache.available = available
+	c.cache.expiresAt = time.Now().Add(10 * time.Minute)
 	return available
 }
 
@@ -164,6 +188,7 @@ func collectGitInfo(ctx context.Context, dir string) *domain.GitStatus {
 		ModifiedCount:  modified,
 		UntrackedCount: untracked,
 		Summary:        strings.TrimSpace(statusShort),
+		DiffStat:       diffStat(ctx, dir),
 	}
 }
 
@@ -173,9 +198,13 @@ func collectKubeInfo(ctx context.Context) *domain.KubeStatus {
 	}
 	contextName := strings.TrimSpace(runCmd(ctx, "", "kubectl", "config", "current-context"))
 	namespace := strings.TrimSpace(runCmd(ctx, "", "kubectl", "config", "view", "--minify", "--output", "jsonpath={..namespace}"))
+	namespaces := strings.Split(strings.TrimSpace(runCmd(ctx, "", "kubectl", "get", "ns", "-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}")), "\n")
+	version := strings.TrimSpace(runCmd(ctx, "", "kubectl", "version", "--short"))
 	return &domain.KubeStatus{
-		Context:   contextName,
-		Namespace: namespace,
+		Context:        contextName,
+		Namespace:      namespace,
+		Namespaces:     filterEmpty(namespaces),
+		ClusterVersion: version,
 	}
 }
 
@@ -191,6 +220,43 @@ func runCmd(ctx context.Context, dir string, name string, args ...string) string
 		return ""
 	}
 	return string(out)
+}
+
+func diffStat(ctx context.Context, dir string) string {
+	output := runCmd(ctx, dir, "git", "diff", "--stat")
+	return strings.TrimSpace(output)
+}
+
+func collectDockerInfo(ctx context.Context) *domain.DockerStatus {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return nil
+	}
+	info := runCmd(ctx, "", "docker", "info", "--format", "'{{.ServerVersion}} {{.OperatingSystem}}'")
+	running := strings.TrimSpace(info) != ""
+	return &domain.DockerStatus{
+		Running: running,
+		Info:    strings.Trim(info, "'"),
+	}
+}
+
+func containsTool(tools []string, name string) bool {
+	for _, tool := range tools {
+		if tool == name {
+			return true
+		}
+	}
+	return false
+}
+
+func filterEmpty(values []string) []string {
+	var result []string
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 var _ ports.ContextCollector = (*BasicCollector)(nil)

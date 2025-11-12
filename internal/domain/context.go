@@ -11,6 +11,8 @@ type ContextSnapshot struct {
 	Git             *GitStatus
 	Kubernetes      *KubeStatus
 	EnvironmentVars map[string]string
+	Docker          *DockerStatus
+	Telemetry       TelemetryInfo
 }
 
 // FileInfo is a minimal representation of discovered files.
@@ -37,11 +39,24 @@ type GitStatus struct {
 	UntrackedCount     int
 	HasUnpushedCommits bool
 	Summary            string
+	DiffStat           string
 }
 
 // KubeStatus captures contextual Kubernetes data.
 type KubeStatus struct {
-	Context    string
-	Namespace  string
-	Namespaces []string
+	Context        string
+	Namespace      string
+	Namespaces     []string
+	ClusterVersion string
+}
+
+// DockerStatus captures docker daemon state info.
+type DockerStatus struct {
+	Running bool
+	Info    string
+}
+
+// TelemetryInfo captures data collection metadata.
+type TelemetryInfo struct {
+	ToolCacheExpires string
 }
