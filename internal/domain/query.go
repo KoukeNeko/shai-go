@@ -25,6 +25,7 @@ type QueryResponse struct {
 	ExecutionPlanned   bool
 	ExecutionResult    *ExecutionResult
 	ContextInformation ContextSnapshot
+	FromCache          bool
 }
 
 // ExecutionResult wraps details from the command executor.

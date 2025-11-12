@@ -6,9 +6,11 @@ import (
 	"github.com/doeshing/shai-go/internal/application/doctor"
 	"github.com/doeshing/shai-go/internal/application/query"
 	"github.com/doeshing/shai-go/internal/infrastructure/ai"
+	"github.com/doeshing/shai-go/internal/infrastructure/cache"
 	"github.com/doeshing/shai-go/internal/infrastructure/config"
 	contextcollector "github.com/doeshing/shai-go/internal/infrastructure/context"
 	"github.com/doeshing/shai-go/internal/infrastructure/executor"
+	"github.com/doeshing/shai-go/internal/infrastructure/history"
 	"github.com/doeshing/shai-go/internal/infrastructure/security"
 	"github.com/doeshing/shai-go/internal/infrastructure/shell"
 	"github.com/doeshing/shai-go/internal/pkg/logger"
@@ -33,6 +35,8 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 
 	log := logger.NewStd(verbose)
 	collector := contextcollector.NewBasicCollector()
+	historyStore := history.NewFileStore()
+	cacheStore := cache.NewFileCache()
 
 	guardrail, err := security.NewGuardrail(cfg.Security.RulesFile)
 	if err != nil {
@@ -51,6 +55,8 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 		SecurityService:  guardrail,
 		Executor:         executor.NewLocalExecutor(""),
 		Logger:           log,
+		HistoryStore:     historyStore,
+		CacheStore:       cacheStore,
 	}
 
 	doctorService := &doctor.Service{

@@ -2,8 +2,12 @@ package query
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/ports"
@@ -19,6 +23,8 @@ type Service struct {
 	Prompter         ports.ConfirmationPrompter
 	Clipboard        ports.Clipboard
 	Logger           ports.Logger
+	HistoryStore     ports.HistoryStore
+	CacheStore       ports.CacheStore
 }
 
 // Run processes a single natural-language query.
@@ -48,24 +54,9 @@ func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 		return domain.QueryResponse{}, err
 	}
 
-	provider, err := s.ProviderFactory.ForModel(modelDef)
+	aiResp, fromCache, err := s.generateCommand(ctx, modelDef, req, ctxSnapshot)
 	if err != nil {
-		return domain.QueryResponse{}, fmt.Errorf("provider init: %w", err)
-	}
-
-	s.Logger.Info("calling provider", map[string]interface{}{
-		"provider": provider.Name(),
-		"model":    modelDef.ModelID,
-	})
-
-	aiResp, err := provider.Generate(ctx, ports.ProviderRequest{
-		Prompt:  req.Prompt,
-		Context: ctxSnapshot,
-		Model:   modelDef,
-		Debug:   req.Debug,
-	})
-	if err != nil {
-		return domain.QueryResponse{}, fmt.Errorf("provider generate: %w", err)
+		return domain.QueryResponse{}, err
 	}
 
 	risk, err := s.SecurityService.Evaluate(aiResp.Command)
@@ -79,6 +70,7 @@ func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 		Reasoning:          aiResp.Reasoning,
 		RiskAssessment:     risk,
 		ContextInformation: ctxSnapshot,
+		FromCache:          fromCache,
 	}
 
 	if req.CopyToClipboard && s.Clipboard != nil && s.Clipboard.Enabled() {
@@ -93,15 +85,18 @@ func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 	}
 
 	if !shouldExecute {
+		s.persistHistory(req, modelDef, resp, nil)
 		return resp, nil
 	}
 
 	execResult, err := s.Executor.Execute(ctx, aiResp.Command, false)
 	resp.ExecutionResult = &execResult
 	if err != nil {
+		s.persistHistory(req, modelDef, resp, &execResult)
 		return resp, err
 	}
 	resp.ExecutionPlanned = true
+	s.persistHistory(req, modelDef, resp, &execResult)
 	return resp, nil
 }
 
@@ -152,3 +147,85 @@ func pickModel(cfg domain.Config, override string) (domain.ModelDefinition, erro
 	}
 	return domain.ModelDefinition{}, fmt.Errorf("model %s not configured", name)
 }
+
+func (s *Service) generateCommand(ctx context.Context, modelDef domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, error) {
+	cacheKey := ""
+	if s.CacheStore != nil {
+		cacheKey = cacheKeyFor(modelDef, req, snapshot)
+		if entry, ok, err := s.CacheStore.Get(cacheKey); err == nil && ok {
+			return ports.ProviderResponse{
+				Command:   entry.Command,
+				Reply:     entry.Reply,
+				Reasoning: entry.Reasoning,
+			}, true, nil
+		}
+	}
+
+	provider, err := s.ProviderFactory.ForModel(modelDef)
+	if err != nil {
+		return ports.ProviderResponse{}, false, fmt.Errorf("provider init: %w", err)
+	}
+
+	s.Logger.Info("calling provider", map[string]interface{}{
+		"provider": provider.Name(),
+		"model":    modelDef.ModelID,
+	})
+
+	aiResp, err := provider.Generate(ctx, ports.ProviderRequest{
+		Prompt:  req.Prompt,
+		Context: snapshot,
+		Model:   modelDef,
+		Debug:   req.Debug,
+	})
+	if err != nil {
+		return ports.ProviderResponse{}, false, fmt.Errorf("provider generate: %w", err)
+	}
+
+	if s.CacheStore != nil && cacheKey != "" {
+		_ = s.CacheStore.Set(domain.CacheEntry{
+			Key:       cacheKey,
+			Command:   aiResp.Command,
+			Reply:     aiResp.Reply,
+			Reasoning: aiResp.Reasoning,
+			Model:     modelDef.Name,
+			CreatedAt: timeNow(),
+		})
+	}
+
+	return aiResp, false, nil
+}
+
+func (s *Service) persistHistory(req domain.QueryRequest, model domain.ModelDefinition, resp domain.QueryResponse, exec *domain.ExecutionResult) {
+	if s.HistoryStore == nil {
+		return
+	}
+	record := domain.HistoryRecord{
+		Timestamp: timeNow(),
+		Prompt:    req.Prompt,
+		Command:   resp.Command,
+		Model:     model.Name,
+		RiskLevel: resp.RiskAssessment.Level,
+	}
+	if exec != nil {
+		record.Executed = exec.Ran
+		record.Success = exec.Err == nil
+		record.ExitCode = exec.ExitCode
+		record.ExecutionTimeMS = exec.DurationMS
+	}
+	if err := s.HistoryStore.Save(record); err != nil {
+		s.Logger.Warn("failed to persist history", map[string]interface{}{"error": err.Error()})
+	}
+}
+
+func cacheKeyFor(model domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) string {
+	data := strings.Join([]string{
+		model.Name,
+		req.Prompt,
+		snapshot.WorkingDir,
+		strings.Join(snapshot.AvailableTools, ","),
+	}, "|")
+	sum := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(sum[:])
+}
+
+var timeNow = func() time.Time { return time.Now() }

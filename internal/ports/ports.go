@@ -74,6 +74,17 @@ type ShellIntegrator interface {
 	DetectShell() string
 }
 
+// HistoryStore persists query history.
+type HistoryStore interface {
+	Save(record domain.HistoryRecord) error
+}
+
+// CacheStore stores provider responses keyed by context hash.
+type CacheStore interface {
+	Get(key string) (domain.CacheEntry, bool, error)
+	Set(entry domain.CacheEntry) error
+}
+
 // Logger is a minimal logging facade for application layer.
 type Logger interface {
 	Debug(msg string, fields map[string]interface{})

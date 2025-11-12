@@ -2,6 +2,7 @@ package security
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,26 +16,22 @@ import (
 
 // Guardrail implements the SecurityService port.
 type Guardrail struct {
-	patterns []compiledPattern
+	patterns     []compiledPattern
+	pathRules    []domain.ProtectedPath
+	previewLimit int
 }
 
 type compiledPattern struct {
 	re   *regexp.Regexp
-	rule DangerPattern
-}
-
-// DangerPattern describes a regex-based guardrail rule.
-type DangerPattern struct {
-	Pattern string `yaml:"pattern"`
-	Level   string `yaml:"level"`
-	Message string `yaml:"message"`
-	Action  string `yaml:"action"`
+	rule domain.DangerPattern
 }
 
 // RulesFile is the YAML schema root.
 type RulesFile struct {
 	Rules struct {
-		DangerPatterns []DangerPattern `yaml:"danger_patterns"`
+		DangerPatterns []domain.DangerPattern `yaml:"danger_patterns"`
+		ProtectedPaths []domain.ProtectedPath `yaml:"protected_paths"`
+		Preview        domain.PreviewRules    `yaml:"preview"`
 	} `yaml:"rules"`
 }
 
@@ -57,7 +54,16 @@ func NewGuardrail(path string) (*Guardrail, error) {
 		})
 	}
 
-	return &Guardrail{patterns: compiled}, nil
+	previewLimit := rules.Rules.Preview.MaxFiles
+	if previewLimit == 0 {
+		previewLimit = 10
+	}
+
+	return &Guardrail{
+		patterns:     compiled,
+		pathRules:    rules.Rules.ProtectedPaths,
+		previewLimit: previewLimit,
+	}, nil
 }
 
 // Evaluate implements ports.SecurityService.
@@ -82,6 +88,17 @@ func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 			assessment.MatchedRules = append(assessment.MatchedRules, pattern.rule.Pattern)
 		}
 	}
+
+	pathAssessment := g.evaluateProtectedPaths(command)
+	if moreSevere(pathAssessment.Level, highest) {
+		assessment.Level = pathAssessment.Level
+		assessment.Action = pathAssessment.Action
+		highest = pathAssessment.Level
+	}
+	assessment.Reasons = append(assessment.Reasons, pathAssessment.Reasons...)
+	assessment.ProtectedPaths = append(assessment.ProtectedPaths, pathAssessment.ProtectedPaths...)
+	assessment.PreviewEntries = append(assessment.PreviewEntries, pathAssessment.PreviewEntries...)
+
 	return assessment, nil
 }
 
@@ -92,6 +109,8 @@ func loadRules(path string) (RulesFile, error) {
 	if err != nil {
 		// fall back to defaults
 		rules.Rules.DangerPatterns = defaultPatterns()
+		rules.Rules.ProtectedPaths = defaultProtectedPaths()
+		rules.Rules.Preview = domain.PreviewRules{MaxFiles: 10}
 		return rules, nil
 	}
 	if err := yaml.Unmarshal(data, &rules); err != nil {
@@ -99,6 +118,12 @@ func loadRules(path string) (RulesFile, error) {
 	}
 	if len(rules.Rules.DangerPatterns) == 0 {
 		rules.Rules.DangerPatterns = defaultPatterns()
+	}
+	if len(rules.Rules.ProtectedPaths) == 0 {
+		rules.Rules.ProtectedPaths = defaultProtectedPaths()
+	}
+	if rules.Rules.Preview.MaxFiles == 0 {
+		rules.Rules.Preview.MaxFiles = 10
 	}
 	return rules, nil
 }
@@ -162,8 +187,8 @@ func expandPath(path string) string {
 	return filepath.Join(userHomeDir(), path)
 }
 
-func defaultPatterns() []DangerPattern {
-	return []DangerPattern{
+func defaultPatterns() []domain.DangerPattern {
+	return []domain.DangerPattern{
 		{Pattern: `rm\s+-rf\s+/`, Level: "critical", Message: "Deleting root directory", Action: "block"},
 		{Pattern: `rm\s+-rf\s+\*`, Level: "critical", Message: "Recursive delete everything", Action: "explicit_confirm"},
 		{Pattern: `dd\s+if=`, Level: "critical", Message: "Raw disk writing", Action: "block"},
@@ -174,6 +199,93 @@ func defaultPatterns() []DangerPattern {
 		{Pattern: `rm\s+-rf\s+\$HOME`, Level: "high", Message: "Deleting home directory", Action: "explicit_confirm"},
 		{Pattern: `:(){ :\|:& };:`, Level: "critical", Message: "Fork bomb", Action: "block"},
 	}
+}
+
+func defaultProtectedPaths() []domain.ProtectedPath {
+	return []domain.ProtectedPath{
+		{Path: "/", Operations: []string{"rm", "mv", "chmod", "chown"}, Level: "critical", Action: "block"},
+		{Path: "/etc", Operations: []string{"rm", "mv"}, Level: "high", Action: "explicit_confirm"},
+		{Path: "/usr", Operations: []string{"rm"}, Level: "high", Action: "explicit_confirm"},
+		{Path: "$HOME", Operations: []string{"rm -rf"}, Level: "high", Action: "explicit_confirm"},
+	}
+}
+
+func (g *Guardrail) evaluateProtectedPaths(command string) domain.RiskAssessment {
+	result := domain.RiskAssessment{
+		Level:  domain.RiskSafe,
+		Action: domain.ActionAllow,
+	}
+	tokens := strings.Fields(command)
+	if len(tokens) == 0 {
+		return result
+	}
+	for _, rule := range g.pathRules {
+		if matchesPathRule(tokens, rule) {
+			level := parseRiskLevel(rule.Level)
+			if moreSevere(level, result.Level) {
+				result.Level = level
+				result.Action = parseAction(rule.Action, level)
+			}
+			result.Reasons = append(result.Reasons, fmt.Sprintf("Operation on protected path %s", rule.Path))
+			result.ProtectedPaths = append(result.ProtectedPaths, rule.Path)
+			preview := previewPath(rule.Path, g.previewLimit)
+			result.PreviewEntries = append(result.PreviewEntries, preview...)
+		}
+	}
+	return result
+}
+
+func matchesPathRule(tokens []string, rule domain.ProtectedPath) bool {
+	if len(rule.Operations) == 0 {
+		return false
+	}
+	command := strings.Join(tokens, " ")
+	path := rule.Path
+	if path == "$HOME" {
+		path = os.Getenv("HOME")
+	}
+	if path == "" {
+		return false
+	}
+	for _, op := range rule.Operations {
+		if strings.Contains(command, op) && strings.Contains(command, path) {
+			return true
+		}
+		if len(tokens) > 0 && tokens[0] == op && strings.Contains(command, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func previewPath(path string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	list := []string{}
+	resolved := path
+	if strings.HasPrefix(path, "$HOME") {
+		resolved = strings.Replace(path, "$HOME", os.Getenv("HOME"), 1)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return nil
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(resolved)
+		if err != nil {
+			return nil
+		}
+		for i, entry := range entries {
+			if i >= limit {
+				break
+			}
+			list = append(list, filepath.Join(path, entry.Name()))
+		}
+	} else {
+		list = append(list, path)
+	}
+	return list
 }
 
 func userHomeDir() string {

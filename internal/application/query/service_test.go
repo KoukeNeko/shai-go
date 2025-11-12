@@ -102,8 +102,8 @@ func (s stubProviderFactory) ForModel(domain.ModelDefinition) (ports.Provider, e
 
 type stubProvider struct{}
 
-func (stubProvider) Name() string                          { return "stub" }
-func (stubProvider) Model() domain.ModelDefinition         { return domain.ModelDefinition{} }
+func (stubProvider) Name() string                  { return "stub" }
+func (stubProvider) Model() domain.ModelDefinition { return domain.ModelDefinition{} }
 func (stubProvider) Generate(context.Context, ports.ProviderRequest) (ports.ProviderResponse, error) {
 	return ports.ProviderResponse{Command: "ls"}, nil
 }

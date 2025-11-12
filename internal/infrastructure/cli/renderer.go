@@ -12,6 +12,9 @@ func RenderResponse(resp domain.QueryResponse) {
 	fmt.Println("SHAI analysis complete")
 	fmt.Printf("Directory: %s\n", resp.ContextInformation.WorkingDir)
 	fmt.Printf("Tools: %s\n", strings.Join(resp.ContextInformation.AvailableTools, ", "))
+	if resp.FromCache {
+		fmt.Println("Note: result served from cache")
+	}
 
 	fmt.Println()
 	fmt.Println("Generated Command:")
