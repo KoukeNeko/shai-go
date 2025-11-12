@@ -21,11 +21,17 @@ type FileCache struct {
 }
 
 // NewFileCache returns a cache rooted under ~/.shai/cache/responses.
-func NewFileCache() *FileCache {
+func NewFileCache(settings domain.CacheSettings) *FileCache {
+	dir := filepath.Join(userHome(), ".shai", "cache", "responses")
+	ttl := parseTTL(settings.TTL)
+	max := settings.MaxEntries
+	if max <= 0 {
+		max = 100
+	}
 	return &FileCache{
-		dir:        filepath.Join(userHome(), ".shai", "cache", "responses"),
-		maxEntries: 100,
-		ttl:        time.Hour,
+		dir:        dir,
+		maxEntries: max,
+		ttl:        ttl,
 	}
 }
 
@@ -160,3 +166,36 @@ func (c *FileCache) evictIfNeeded() error {
 
 var _ ports.CacheStore = (*FileCache)(nil)
 var _ ports.CacheRepository = (*FileCache)(nil)
+
+func parseTTL(raw string) time.Duration {
+	if raw == "" {
+		return time.Hour
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		return d
+	}
+	return time.Hour
+}
+
+// Settings returns the current TTL/max settings.
+func (c *FileCache) Settings() domain.CacheSettings {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return domain.CacheSettings{
+		TTL:        c.ttl.String(),
+		MaxEntries: c.maxEntries,
+	}
+}
+
+// Update adjusts TTL/max entries at runtime.
+func (c *FileCache) Update(settings domain.CacheSettings) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if settings.MaxEntries > 0 {
+		c.maxEntries = settings.MaxEntries
+	}
+	if settings.TTL != "" {
+		c.ttl = parseTTL(settings.TTL)
+	}
+	return nil
+}

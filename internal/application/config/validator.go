@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
 )
@@ -33,6 +34,12 @@ func Validate(cfg domain.Config) error {
 	if err := validateSecurity(cfg.Security); err != nil {
 		return err
 	}
+	if err := validateCache(cfg.Cache); err != nil {
+		return err
+	}
+	if err := validateHistory(cfg.History); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -60,6 +67,26 @@ func validateContext(ctx domain.ContextSettings) error {
 func validateSecurity(sec domain.SecuritySettings) error {
 	if sec.RulesFile == "" {
 		return fmt.Errorf("security.rules_file must be set")
+	}
+	return nil
+}
+
+func validateCache(cache domain.CacheSettings) error {
+	if cache.TTL == "" {
+		cache.TTL = "1h"
+	}
+	if _, err := time.ParseDuration(cache.TTL); err != nil {
+		return fmt.Errorf("cache.ttl invalid: %w", err)
+	}
+	if cache.MaxEntries <= 0 {
+		return fmt.Errorf("cache.max_entries must be > 0")
+	}
+	return nil
+}
+
+func validateHistory(history domain.HistorySettings) error {
+	if history.RetentionDays < 0 {
+		return fmt.Errorf("history.retention_days must be >= 0")
 	}
 	return nil
 }

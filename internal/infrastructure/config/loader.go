@@ -142,6 +142,13 @@ func defaultConfig() domain.Config {
 			Shell:                "auto",
 			ConfirmBeforeExecute: true,
 		},
+		Cache: domain.CacheSettings{
+			TTL:        "1h",
+			MaxEntries: 100,
+		},
+		History: domain.HistorySettings{
+			RetentionDays: 90,
+		},
 		Models: []domain.ModelDefinition{
 			{
 				Name:       "claude-sonnet-4",
@@ -169,6 +176,15 @@ func hydrateDefaults(cfg domain.Config) domain.Config {
 		if len(cfg.Models[i].Prompt) == 0 {
 			cfg.Models[i].Prompt = defaultPromptMessages()
 		}
+	}
+	if cfg.Cache.TTL == "" {
+		cfg.Cache.TTL = "1h"
+	}
+	if cfg.Cache.MaxEntries <= 0 {
+		cfg.Cache.MaxEntries = 100
+	}
+	if cfg.History.RetentionDays < 0 {
+		cfg.History.RetentionDays = 0
 	}
 	return cfg
 }

@@ -88,6 +88,8 @@ type HistoryRepository interface {
 	Clear() error
 	ExportJSON(path string) error
 	Path() string
+	PruneOlderThan(days int) error
+	SetRetentionDays(days int)
 }
 
 // CacheStore stores provider responses keyed by context hash.
@@ -102,6 +104,8 @@ type CacheRepository interface {
 	Entries() ([]domain.CacheEntry, error)
 	Clear() error
 	Dir() string
+	Settings() domain.CacheSettings
+	Update(settings domain.CacheSettings) error
 }
 
 // Logger is a minimal logging facade for application layer.

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -413,6 +414,28 @@ func newHistoryCommand(container *app.Container) *cobra.Command {
 	}
 
 	historyCmd.AddCommand(listCmd, searchCmd, clearCmd, exportCmd)
+	statsCmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Show success rate and top commands",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHistoryStats(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+
+	var retainDays int
+	retainCmd := &cobra.Command{
+		Use:   "retain",
+		Short: "Prune history older than N days and update retention policy",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if retainDays <= 0 {
+				return fmt.Errorf("--days must be > 0")
+			}
+			return runHistoryRetain(cmd.Context(), cmd.OutOrStdout(), container, retainDays)
+		},
+	}
+	retainCmd.Flags().IntVar(&retainDays, "days", 30, "Days to retain history")
+
+	historyCmd.AddCommand(statsCmd, retainCmd)
 	return historyCmd
 }
 
@@ -475,7 +498,27 @@ func newCacheCommand(container *app.Container) *cobra.Command {
 		},
 	}
 
-	cacheCmd.AddCommand(listCmd, clearCmd, sizeCmd)
+	statsCmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Show cache settings and per-model counts",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCacheStats(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+
+	var ttl string
+	var maxEntries int
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "Update cache TTL/max entries",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCacheConfig(cmd.Context(), container, ttl, maxEntries)
+		},
+	}
+	configCmd.Flags().StringVar(&ttl, "ttl", "", "Cache TTL duration (e.g. 30m, 2h)")
+	configCmd.Flags().IntVar(&maxEntries, "max", 0, "Max cache entries")
+
+	cacheCmd.AddCommand(listCmd, clearCmd, sizeCmd, statsCmd, configCmd)
 	return cacheCmd
 }
 
@@ -782,6 +825,124 @@ func loadGuardrailDoc(ctx context.Context, container *app.Container) (security.P
 	return doc, path, nil
 }
 
+func runHistoryStats(ctx context.Context, out io.Writer, container *app.Container) error {
+	store := container.HistoryStore
+	if store == nil {
+		return fmt.Errorf("history store unavailable")
+	}
+	records, err := store.Records(1000, "")
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		fmt.Fprintln(out, "No history recorded yet.")
+		return nil
+	}
+	var executed, success int
+	freq := map[string]int{}
+	riskCounts := map[domain.RiskLevel]int{}
+	for _, rec := range records {
+		if rec.Executed {
+			executed++
+			if rec.Success {
+				success++
+			}
+		}
+		freq[rec.Command]++
+		riskCounts[rec.RiskLevel]++
+	}
+	fmt.Fprintf(out, "Entries analyzed: %d\nExecuted: %d\nSuccess rate: %.1f%%\n",
+		len(records), executed, successRate(success, executed))
+	fmt.Fprintln(out, "Top commands:")
+	for _, stat := range topCommands(freq, 5) {
+		fmt.Fprintf(out, "  %s (%d)\n", stat.Command, stat.Count)
+	}
+	fmt.Fprintln(out, "Risk distribution:")
+	for level, count := range riskCounts {
+		fmt.Fprintf(out, "  %s: %d\n", level, count)
+	}
+	hints := deriveUndoHints(records)
+	if len(hints) > 0 {
+		fmt.Fprintln(out, "Undo hints:")
+		for _, hint := range hints {
+			fmt.Fprintf(out, "  - %s\n", hint)
+		}
+	}
+	return nil
+}
+
+func runHistoryRetain(ctx context.Context, out io.Writer, container *app.Container, days int) error {
+	store := container.HistoryStore
+	if store == nil {
+		return fmt.Errorf("history store unavailable")
+	}
+	if err := store.PruneOlderThan(days); err != nil {
+		return err
+	}
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	cfg.History.RetentionDays = days
+	if err := saveConfig(container, cfg); err != nil {
+		return err
+	}
+	store.SetRetentionDays(days)
+	fmt.Fprintf(out, "Retained last %d days of history.\n", days)
+	return nil
+}
+
+func runCacheStats(ctx context.Context, out io.Writer, container *app.Container) error {
+	cache := container.CacheStore
+	if cache == nil {
+		return fmt.Errorf("cache store unavailable")
+	}
+	settings := cache.Settings()
+	entries, err := cache.Entries()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Cache TTL: %s\nMax entries: %d\nCurrent entries: %d\n", settings.TTL, settings.MaxEntries, len(entries))
+	counts := map[string]int{}
+	for _, entry := range entries {
+		counts[entry.Model]++
+	}
+	if len(counts) == 0 {
+		fmt.Fprintln(out, "No cached responses.")
+		return nil
+	}
+	fmt.Fprintln(out, "Entries per model:")
+	for _, stat := range topCommands(counts, len(counts)) {
+		fmt.Fprintf(out, "  %s: %d\n", stat.Command, stat.Count)
+	}
+	return nil
+}
+
+func runCacheConfig(ctx context.Context, container *app.Container, ttl string, maxEntries int) error {
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	updated := cfg.Cache
+	if ttl != "" {
+		if _, err := time.ParseDuration(ttl); err != nil {
+			return fmt.Errorf("invalid ttl: %w", err)
+		}
+		updated.TTL = ttl
+	}
+	if maxEntries > 0 {
+		updated.MaxEntries = maxEntries
+	}
+	cfg.Cache = updated
+	if err := saveConfig(container, cfg); err != nil {
+		return err
+	}
+	if container.CacheStore != nil {
+		_ = container.CacheStore.Update(updated)
+	}
+	return nil
+}
+
 func runInstall(cmd *cobra.Command, container *app.Container, shellFlag string, force bool) error {
 	if container.ShellIntegrator == nil {
 		return fmt.Errorf("shell installer unavailable")
@@ -1057,6 +1218,58 @@ func promptString(out io.Writer, reader *bufio.Reader, prompt string, defaultVal
 		return defaultVal
 	}
 	return line
+}
+
+type commandStat struct {
+	Command string
+	Count   int
+}
+
+func topCommands(m map[string]int, limit int) []commandStat {
+	var stats []commandStat
+	for cmd, count := range m {
+		stats = append(stats, commandStat{Command: cmd, Count: count})
+	}
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].Count == stats[j].Count {
+			return stats[i].Command < stats[j].Command
+		}
+		return stats[i].Count > stats[j].Count
+	})
+	if limit > 0 && len(stats) > limit {
+		return stats[:limit]
+	}
+	return stats
+}
+
+func successRate(success, executed int) float64 {
+	if executed == 0 {
+		return 0
+	}
+	return float64(success) / float64(executed) * 100
+}
+
+func deriveUndoHints(records []domain.HistoryRecord) []string {
+	hints := map[string]string{}
+	for _, rec := range records {
+		cmd := strings.ToLower(rec.Command)
+		switch {
+		case strings.HasPrefix(cmd, "git "):
+			hints["git"] = "Use `git status`, `git reflog`, or `git restore` to inspect and undo git changes."
+		case strings.HasPrefix(cmd, "kubectl "):
+			hints["kubectl"] = "Use `kubectl rollout undo` or `kubectl get events` to recover from cluster issues."
+		case strings.HasPrefix(cmd, "rm "):
+			hints["rm"] = "Restore files via backups or `git checkout -- <path>` if tracked."
+		case strings.HasPrefix(cmd, "docker "):
+			hints["docker"] = "Use `docker ps -a` and `docker logs` to review container history before repeating."
+		}
+	}
+	var list []string
+	for _, hint := range hints {
+		list = append(list, hint)
+	}
+	sort.Strings(list)
+	return list
 }
 
 func newGuardrailCommand(container *app.Container) *cobra.Command {

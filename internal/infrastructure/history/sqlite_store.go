@@ -3,6 +3,7 @@ package history
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,23 +18,23 @@ import (
 
 // SQLiteStore persists history in a SQLite database.
 type SQLiteStore struct {
-	db   *sql.DB
-	path string
-	mu   sync.Mutex
+	db            *sql.DB
+	path          string
+	mu            sync.Mutex
+	retentionDays int
 }
 
 // NewSQLiteStore creates (or opens) the ~/.shai/history/history.db database.
-func NewSQLiteStore() *SQLiteStore {
+func NewSQLiteStore(retentionDays int) *SQLiteStore {
 	path := filepath.Join(userHome(), ".shai", "history", "history.db")
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		// fallback to file store
-		return &SQLiteStore{path: path}
+		return &SQLiteStore{path: path, retentionDays: retentionDays}
 	}
-	store := &SQLiteStore{db: db, path: path}
+	store := &SQLiteStore{db: db, path: path, retentionDays: retentionDays}
 	if err := store.init(); err != nil {
-		return &SQLiteStore{path: path}
+		return &SQLiteStore{path: path, retentionDays: retentionDays}
 	}
 	return store
 }
@@ -77,7 +78,13 @@ func (s *SQLiteStore) Save(record domain.HistoryRecord) error {
 		record.RiskLevel,
 		record.ExecutionTimeMS,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if s.retentionDays > 0 {
+		return s.PruneOlderThan(s.retentionDays)
+	}
+	return nil
 }
 
 // Records returns history entries (limit/search optional).
@@ -158,6 +165,23 @@ func (s *SQLiteStore) ExportJSON(dest string) error {
 // Path returns the sqlite database path.
 func (s *SQLiteStore) Path() string {
 	return s.path
+}
+
+// PruneOlderThan removes entries older than N days.
+func (s *SQLiteStore) PruneOlderThan(days int) error {
+	if days <= 0 {
+		return nil
+	}
+	if s.db == nil {
+		return (&FileStore{path: s.path}).PruneOlderThan(days)
+	}
+	_, err := s.db.Exec("DELETE FROM commands WHERE datetime(timestamp) < datetime('now', ?)", fmt.Sprintf("-%d days", days))
+	return err
+}
+
+// SetRetentionDays updates retention policy.
+func (s *SQLiteStore) SetRetentionDays(days int) {
+	s.retentionDays = days
 }
 
 func boolToInt(b bool) int {

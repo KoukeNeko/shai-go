@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/ports"
@@ -105,5 +106,32 @@ func userHome() string {
 	}
 	return "."
 }
+
+// PruneOlderThan removes entries older than N days.
+func (f *FileStore) PruneOlderThan(days int) error {
+	if days <= 0 {
+		return nil
+	}
+	records, err := f.Records(0, "")
+	if err != nil {
+		return err
+	}
+	cutoff := time.Now().AddDate(0, 0, -days)
+	var buf bytes.Buffer
+	for _, rec := range records {
+		if rec.Timestamp.Before(cutoff) {
+			continue
+		}
+		data, err := json.Marshal(rec)
+		if err != nil {
+			continue
+		}
+		buf.Write(data)
+		buf.WriteByte('\n')
+	}
+	return os.WriteFile(f.path, buf.Bytes(), 0o644)
+}
+
+func (f *FileStore) SetRetentionDays(int) {}
 
 var _ ports.HistoryRepository = (*FileStore)(nil)

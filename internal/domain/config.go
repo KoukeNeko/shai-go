@@ -8,14 +8,16 @@ type Config struct {
 	Context             ContextSettings   `yaml:"context"`
 	Security            SecuritySettings  `yaml:"security"`
 	Execution           ExecutionSettings `yaml:"execution"`
+	Cache               CacheSettings     `yaml:"cache"`
+	History             HistorySettings   `yaml:"history"`
 }
 
 // Preferences captures user level toggles.
 type Preferences struct {
-	DefaultModel    string `yaml:"default_model"`
-	AutoExecuteSafe bool   `yaml:"auto_execute_safe"`
-	PreviewMode     string `yaml:"preview_mode"`
-	TimeoutSeconds  int    `yaml:"timeout"`
+	DefaultModel    string   `yaml:"default_model"`
+	AutoExecuteSafe bool     `yaml:"auto_execute_safe"`
+	PreviewMode     string   `yaml:"preview_mode"`
+	TimeoutSeconds  int      `yaml:"timeout"`
 	FallbackModels  []string `yaml:"fallback_models"`
 }
 
@@ -38,4 +40,13 @@ type SecuritySettings struct {
 type ExecutionSettings struct {
 	Shell                string `yaml:"shell"`
 	ConfirmBeforeExecute bool   `yaml:"confirm_before_execute"`
+}
+
+type CacheSettings struct {
+	TTL        string `yaml:"ttl"`
+	MaxEntries int    `yaml:"max_entries"`
+}
+
+type HistorySettings struct {
+	RetentionDays int `yaml:"retention_days"`
 }

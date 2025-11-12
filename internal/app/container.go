@@ -38,8 +38,8 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 
 	log := logger.NewStd(verbose)
 	collector := contextcollector.NewBasicCollector()
-	historyStore := history.NewSQLiteStore()
-	cacheStore := cache.NewFileCache()
+	historyStore := history.NewSQLiteStore(cfg.History.RetentionDays)
+	cacheStore := cache.NewFileCache(cfg.Cache)
 
 	guardrail, err := security.NewGuardrail(cfg.Security.RulesFile)
 	if err != nil {
