@@ -21,8 +21,11 @@ import (
 type Container struct {
 	QueryService    *query.Service
 	ConfigProvider  ports.ConfigProvider
+	ConfigLoader    *config.FileLoader
 	ShellIntegrator ports.ShellIntegrator
 	DoctorService   *doctor.Service
+	HistoryStore    *history.FileStore
+	CacheStore      *cache.FileCache
 }
 
 // BuildContainer constructs the dependency graph.
@@ -69,7 +72,10 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 	return &Container{
 		QueryService:    queryService,
 		ConfigProvider:  cfgLoader,
+		ConfigLoader:    cfgLoader,
 		ShellIntegrator: shellInstaller,
 		DoctorService:   doctorService,
+		HistoryStore:    historyStore,
+		CacheStore:      cacheStore,
 	}, nil
 }

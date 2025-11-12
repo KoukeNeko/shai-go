@@ -73,6 +73,32 @@ func writeDefault(path string, cfg domain.Config) error {
 	return os.WriteFile(path, raw, 0o600)
 }
 
+// Path returns the resolved config file path.
+func (l *FileLoader) Path() string {
+	return l.resolvePath()
+}
+
+// Save writes the given config back to disk.
+func (l *FileLoader) Save(cfg domain.Config) error {
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if err := ensureConfigDir(l.resolvePath()); err != nil {
+		return err
+	}
+	return os.WriteFile(l.resolvePath(), raw, 0o600)
+}
+
+// Reset overwrites the config with defaults and returns the default snapshot.
+func (l *FileLoader) Reset() (domain.Config, error) {
+	cfg := defaultConfig()
+	if err := l.Save(cfg); err != nil {
+		return domain.Config{}, err
+	}
+	return cfg, nil
+}
+
 func defaultConfig() domain.Config {
 	return domain.Config{
 		ConfigFormatVersion: "1",

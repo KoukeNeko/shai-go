@@ -60,6 +60,42 @@ func (c *FileCache) Set(entry domain.CacheEntry) error {
 	return os.WriteFile(c.pathFor(entry.Key), data, 0o644)
 }
 
+// Dir exposes the cache directory path.
+func (c *FileCache) Dir() string {
+	return c.dir
+}
+
+// Clear removes all cached entries.
+func (c *FileCache) Clear() error {
+	return os.RemoveAll(c.dir)
+}
+
+// Entries lists cache entries (best-effort).
+func (c *FileCache) Entries() ([]domain.CacheEntry, error) {
+	files, err := os.ReadDir(c.dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var entries []domain.CacheEntry
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(c.dir, f.Name()))
+		if err != nil {
+			continue
+		}
+		var entry domain.CacheEntry
+		if err := json.Unmarshal(data, &entry); err == nil {
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
 func (c *FileCache) pathFor(key string) string {
 	return filepath.Join(c.dir, key+".json")
 }
