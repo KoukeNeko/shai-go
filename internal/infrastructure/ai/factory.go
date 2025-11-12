@@ -23,24 +23,29 @@ func NewFactory() *Factory {
 
 // ForModel returns a provider implementation for the given model definition.
 func (f *Factory) ForModel(model domain.ModelDefinition) (ports.Provider, error) {
-	switch inferProvider(model.Endpoint) {
+	switch inferProvider(model.Endpoint, model.Name) {
 	case domain.ProviderKindAnthropic:
 		return newAnthropicProvider(model, f.httpClient), nil
 	case domain.ProviderKindOpenAI:
-		return newHeuristicProvider(model), nil
+		return newOpenAIProvider(model, f.httpClient), nil
 	case domain.ProviderKindOllama:
-		return newHeuristicProvider(model), nil
+		return newOllamaProvider(model, f.httpClient), nil
 	default:
 		return newHeuristicProvider(model), nil
 	}
 }
 
-func inferProvider(endpoint string) domain.ProviderKind {
+func inferProvider(endpoint string, name string) domain.ProviderKind {
+	nameLower := strings.ToLower(name)
 	switch {
 	case strings.Contains(endpoint, "anthropic.com"):
 		return domain.ProviderKindAnthropic
 	case strings.Contains(endpoint, "openai.com"):
 		return domain.ProviderKindOpenAI
+	case strings.Contains(nameLower, "ollama"):
+		return domain.ProviderKindOllama
+	case strings.Contains(endpoint, "11434"):
+		return domain.ProviderKindOllama
 	case strings.Contains(endpoint, "localhost"):
 		return domain.ProviderKindOllama
 	default:

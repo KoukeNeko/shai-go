@@ -104,6 +104,7 @@ func defaultConfig() domain.Config {
 				AuthEnvVar: "ANTHROPIC_API_KEY",
 				ModelID:    "claude-3-5-sonnet-20240620",
 				MaxTokens:  1024,
+				Prompt:     defaultPromptMessages(),
 			},
 		},
 	}
@@ -118,6 +119,11 @@ func hydrateDefaults(cfg domain.Config) domain.Config {
 	}
 	if cfg.Context.MaxFiles == 0 {
 		cfg.Context.MaxFiles = 20
+	}
+	for i := range cfg.Models {
+		if len(cfg.Models[i].Prompt) == 0 {
+			cfg.Models[i].Prompt = defaultPromptMessages()
+		}
 	}
 	return cfg
 }
@@ -140,3 +146,24 @@ func userHomeDir() string {
 }
 
 var _ ports.ConfigProvider = (*FileLoader)(nil)
+
+func defaultPromptMessages() []domain.PromptMessage {
+	return []domain.PromptMessage{
+		{
+			Role: "system",
+			Content: `You are SHAI, a cautious shell assistant.
+Always output a single shell command (with optional short explanation).
+Current environment:
+- Directory: {{.WorkingDir}}
+- Shell: {{.Shell}}
+- OS: {{.OS}}
+{{if .AvailableTools}}- Tools: {{.AvailableTools}}{{end}}
+{{if .GitStatus}}- Git: {{.GitStatus}}{{end}}
+{{if .K8sNamespace}}- Kubernetes: {{.K8sContext}}/{{.K8sNamespace}}{{end}}`,
+		},
+		{
+			Role:    "user",
+			Content: "{{.Prompt}}",
+		},
+	}
+}

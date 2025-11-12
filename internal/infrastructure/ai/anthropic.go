@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/doeshing/shai-go/internal/domain"
@@ -39,18 +38,18 @@ func (p *anthropicProvider) Generate(ctx context.Context, req ports.ProviderRequ
 		return newHeuristicProvider(p.model).Generate(ctx, req)
 	}
 
+	rendered, err := renderPromptMessages(p.model, req.Prompt, req.Context)
+	if err != nil {
+		return ports.ProviderResponse{}, err
+	}
+
+	systemPrompt, chatMessages := splitSystemMessages(rendered)
+
 	payload := anthropicRequest{
 		Model:     valueOrDefault(p.model.ModelID, "claude-3-5-sonnet-20240620"),
 		MaxTokens: valueOrDefaultInt(p.model.MaxTokens, 1024),
-		System:    renderSystemPrompt(p.model, req.Context),
-		Messages: []anthropicMessage{
-			{
-				Role: "user",
-				Content: []anthropicContent{
-					{Type: "text", Text: renderUserPrompt(req.Prompt, req.Context)},
-				},
-			},
-		},
+		System:    systemPrompt,
+		Messages:  chatMessages,
 	}
 
 	body, err := json.Marshal(payload)
@@ -88,41 +87,6 @@ func (p *anthropicProvider) Generate(ctx context.Context, req ports.ProviderRequ
 		Reply:     content,
 		Reasoning: "Generated via Claude",
 	}, nil
-}
-
-func renderSystemPrompt(model domain.ModelDefinition, ctx domain.ContextSnapshot) string {
-	if len(model.Prompt) == 0 {
-		return fmt.Sprintf("You are SHAI, a cautious shell assistant operating in %s.", ctx.WorkingDir)
-	}
-	var builder strings.Builder
-	for _, msg := range model.Prompt {
-		if msg.Role == "system" {
-			builder.WriteString(msg.Content)
-			builder.WriteString("\n")
-		}
-	}
-	return builder.String()
-}
-
-func renderUserPrompt(prompt string, ctx domain.ContextSnapshot) string {
-	var builder strings.Builder
-	builder.WriteString("User query:\n")
-	builder.WriteString(prompt)
-	builder.WriteString("\n\nContext:\n")
-	builder.WriteString(fmt.Sprintf("- Directory: %s\n", ctx.WorkingDir))
-	builder.WriteString(fmt.Sprintf("- Shell: %s\n", ctx.Shell))
-	builder.WriteString(fmt.Sprintf("- OS: %s\n", ctx.OS))
-	if len(ctx.AvailableTools) > 0 {
-		builder.WriteString(fmt.Sprintf("- Tools: %s\n", strings.Join(ctx.AvailableTools, ", ")))
-	}
-	if ctx.Git != nil {
-		builder.WriteString(fmt.Sprintf("- Git: branch %s, modified %d, untracked %d\n", ctx.Git.Branch, ctx.Git.ModifiedCount, ctx.Git.UntrackedCount))
-	}
-	if ctx.Kubernetes != nil {
-		builder.WriteString(fmt.Sprintf("- K8s: context %s namespace %s\n", ctx.Kubernetes.Context, ctx.Kubernetes.Namespace))
-	}
-	builder.WriteString("\nReturn ONLY the shell command and short reasoning.")
-	return builder.String()
 }
 
 func extractCommand(content string) string {
@@ -180,25 +144,20 @@ func (a anthropicResponse) FirstText() string {
 	return a.Content[0].Text
 }
 
-func resolveAuth(primary string, fallback string) string {
-	if primary != "" {
-		if value := os.Getenv(primary); value != "" {
-			return value
+func splitSystemMessages(messages []domain.PromptMessage) (string, []anthropicMessage) {
+	var systemLines []string
+	var chat []anthropicMessage
+	for _, msg := range messages {
+		if strings.EqualFold(msg.Role, "system") {
+			systemLines = append(systemLines, msg.Content)
+			continue
 		}
+		chat = append(chat, anthropicMessage{
+			Role: msg.Role,
+			Content: []anthropicContent{
+				{Type: "text", Text: msg.Content},
+			},
+		})
 	}
-	return os.Getenv(fallback)
-}
-
-func valueOrDefault(value string, def string) string {
-	if value == "" {
-		return def
-	}
-	return value
-}
-
-func valueOrDefaultInt(value int, def int) int {
-	if value == 0 {
-		return def
-	}
-	return value
+	return strings.TrimSpace(strings.Join(systemLines, "\n")), chat
 }
