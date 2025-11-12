@@ -51,6 +51,7 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	root.AddCommand(newCacheCommand(container))
 	root.AddCommand(newModelsCommand(container))
 	root.AddCommand(newGuardrailCommand(container))
+	root.AddCommand(newInitCommand(container))
 	return root, nil
 }
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,13 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/doeshing/shai-go/internal/app"
+	configapp "github.com/doeshing/shai-go/internal/application/config"
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/infrastructure/ai"
-	"github.com/doeshing/shai-go/internal/infrastructure/config"
+	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
 	"github.com/doeshing/shai-go/internal/infrastructure/security"
 	"github.com/doeshing/shai-go/internal/ports"
 )
@@ -162,7 +165,15 @@ func newConfigCommand(container *app.Container) *cobra.Command {
 		},
 	}
 
-	configCmd.AddCommand(showCmd, getCmd, setCmd, editCmd, validateCmd, resetCmd)
+	diffCmd := &cobra.Command{
+		Use:   "diff",
+		Short: "Show diff versus default configuration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runConfigDiff(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+
+	configCmd.AddCommand(showCmd, getCmd, setCmd, editCmd, validateCmd, resetCmd, diffCmd)
 	return configCmd
 }
 
@@ -227,10 +238,6 @@ func renderDoctorReport(out io.Writer, report domain.HealthReport) {
 }
 
 func runConfigSet(ctx context.Context, container *app.Container, key, value string) error {
-	loader, err := configLoader(container)
-	if err != nil {
-		return err
-	}
 	cfg, err := container.ConfigProvider.Load(ctx)
 	if err != nil {
 		return err
@@ -262,7 +269,11 @@ func runConfigSet(ctx context.Context, container *app.Container, key, value stri
 		return err
 	}
 
-	return loader.Save(updated)
+	if err := configapp.Validate(updated); err != nil {
+		return err
+	}
+
+	return saveConfig(container, updated)
 }
 
 func runConfigEdit(container *app.Container) error {
@@ -281,7 +292,22 @@ func runConfigEdit(container *app.Container) error {
 	return cmd.Run()
 }
 
-func configLoader(container *app.Container) (*config.FileLoader, error) {
+func runConfigDiff(ctx context.Context, out io.Writer, container *app.Container) error {
+	current, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	defaults := configinfra.DefaultConfig()
+	diff := cmp.Diff(defaults, current)
+	if diff == "" {
+		fmt.Fprintln(out, "No differences from default configuration.")
+		return nil
+	}
+	fmt.Fprintln(out, diff)
+	return nil
+}
+
+func configLoader(container *app.Container) (*configinfra.FileLoader, error) {
 	if container.ConfigLoader == nil {
 		return nil, fmt.Errorf("config loader unavailable")
 	}
@@ -615,6 +641,14 @@ func saveConfig(container *app.Container, cfg domain.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := configapp.Validate(cfg); err != nil {
+		return err
+	}
+	if _, err := os.Stat(loader.Path()); err == nil {
+		if _, err := loader.Backup(); err != nil {
+			return err
+		}
+	}
 	return loader.Save(cfg)
 }
 
@@ -700,7 +734,7 @@ func runGuardrailWhitelistRemove(ctx context.Context, container *app.Container, 
 	}
 	if !found {
 		return fmt.Errorf("%s not found in whitelist", entry)
- 	}
+	}
 	doc.Rules.Whitelist = filtered
 	return security.SavePolicyDocument(path, doc)
 }
@@ -762,6 +796,186 @@ func loadGuardrailDoc(ctx context.Context, container *app.Container) (security.P
 		return security.PolicyDocument{}, "", err
 	}
 	return doc, path, nil
+}
+
+type providerTemplate struct {
+	Key          string
+	Label        string
+	Model        domain.ModelDefinition
+	Instructions string
+}
+
+var providerOptions = []providerTemplate{
+	{
+		Key:   "anthropic",
+		Label: "Anthropic Claude (claude-sonnet-4)",
+		Model: domain.ModelDefinition{
+			Name:       "claude-sonnet-4",
+			Endpoint:   "https://api.anthropic.com/v1/messages",
+			ModelID:    "claude-3-5-sonnet-20240620",
+			AuthEnvVar: "ANTHROPIC_API_KEY",
+			MaxTokens:  1024,
+			Prompt:     configinfra.DefaultConfig().Models[0].Prompt,
+		},
+		Instructions: "Set ANTHROPIC_API_KEY in your environment.",
+	},
+	{
+		Key:   "openai",
+		Label: "OpenAI GPT-4o",
+		Model: domain.ModelDefinition{
+			Name:       "gpt-4o",
+			Endpoint:   "https://api.openai.com/v1/chat/completions",
+			ModelID:    "gpt-4o-mini",
+			AuthEnvVar: "OPENAI_API_KEY",
+			OrgEnvVar:  "OPENAI_ORG_ID",
+			MaxTokens:  800,
+		},
+		Instructions: "Set OPENAI_API_KEY (and OPENAI_ORG_ID if required).",
+	},
+	{
+		Key:   "ollama",
+		Label: "Ollama (local codellama)",
+		Model: domain.ModelDefinition{
+			Name:      "codellama",
+			Endpoint:  "http://localhost:11434/v1/chat/completions",
+			ModelID:   "codellama:7b",
+			MaxTokens: 512,
+		},
+		Instructions: "Ensure Ollama is running locally (`ollama run codellama`).",
+	},
+}
+
+func runInitWizard(cmd *cobra.Command, container *app.Container, providerKey string, force bool) error {
+	loader, err := configLoader(container)
+	if err != nil {
+		return err
+	}
+	path := loader.Path()
+	if _, err := os.Stat(path); err == nil && !force {
+		if !promptYesNo(cmd.OutOrStdout(), bufio.NewReader(cmd.InOrStdin()), fmt.Sprintf("%s exists. Overwrite?", path), false) {
+			fmt.Fprintln(cmd.OutOrStdout(), "Init cancelled.")
+			return nil
+		}
+	}
+
+	reader := bufio.NewReader(cmd.InOrStdin())
+	selected, err := selectProvider(cmd.OutOrStdout(), reader, providerKey)
+	if err != nil {
+		return err
+	}
+
+	cfg := configinfra.DefaultConfig()
+	cfg.Models = []domain.ModelDefinition{selected.Model}
+	cfg.Preferences.DefaultModel = selected.Model.Name
+	cfg.Preferences.FallbackModels = nil
+
+	includeGit := promptChoice(cmd.OutOrStdout(), reader, "Include git context (auto/always/never)?", cfg.Context.IncludeGit)
+	includeK8s := promptChoice(cmd.OutOrStdout(), reader, "Include kubernetes context (auto/always/never)?", cfg.Context.IncludeK8s)
+	includeEnv := promptYesNo(cmd.OutOrStdout(), reader, "Include environment variables (PATH, KUBECONFIG)?", cfg.Context.IncludeEnv)
+	previewMode := promptChoice(cmd.OutOrStdout(), reader, "Preview mode (always/never)?", cfg.Preferences.PreviewMode)
+	autoExecute := promptYesNo(cmd.OutOrStdout(), reader, "Auto execute safe commands?", cfg.Preferences.AutoExecuteSafe)
+	confirmExec := promptYesNo(cmd.OutOrStdout(), reader, "Confirm before executing commands?", cfg.Execution.ConfirmBeforeExecute)
+
+	cfg.Context.IncludeGit = includeGit
+	cfg.Context.IncludeK8s = includeK8s
+	cfg.Context.IncludeEnv = includeEnv
+	cfg.Preferences.PreviewMode = previewMode
+	cfg.Preferences.AutoExecuteSafe = autoExecute
+	cfg.Execution.ConfirmBeforeExecute = confirmExec
+
+	fallbackInput := promptString(cmd.OutOrStdout(), reader, "Fallback models (comma separated, optional):", "")
+	if fallbackInput != "" {
+		names := strings.Split(fallbackInput, ",")
+		for _, name := range names {
+			name = strings.TrimSpace(name)
+			if name != "" && name != cfg.Preferences.DefaultModel {
+				cfg.Preferences.FallbackModels = append(cfg.Preferences.FallbackModels, name)
+			}
+		}
+	}
+
+	if err := configapp.Validate(cfg); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		if _, err := loader.Backup(); err != nil {
+			return err
+		}
+	}
+	if err := loader.Save(cfg); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Configuration written to %s\n", path)
+	if selected.Model.AuthEnvVar != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Remember to export %s\n", selected.Model.AuthEnvVar)
+	}
+	if selected.Model.OrgEnvVar != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "If required, set %s as well.\n", selected.Model.OrgEnvVar)
+	}
+	if selected.Instructions != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), selected.Instructions)
+	}
+	return nil
+}
+
+func selectProvider(out io.Writer, reader *bufio.Reader, key string) (providerTemplate, error) {
+	if key != "" {
+		for _, option := range providerOptions {
+			if option.Key == strings.ToLower(key) {
+				return option, nil
+			}
+		}
+		return providerTemplate{}, fmt.Errorf("unknown provider %s", key)
+	}
+	fmt.Fprintln(out, "Select a provider:")
+	for i, option := range providerOptions {
+		fmt.Fprintf(out, "  %d) %s\n", i+1, option.Label)
+	}
+	choice := promptString(out, reader, "Choice [1]:", "1")
+	idx := 1
+	fmt.Sscanf(choice, "%d", &idx)
+	if idx < 1 || idx > len(providerOptions) {
+		return providerOptions[0], nil
+	}
+	return providerOptions[idx-1], nil
+}
+
+func promptChoice(out io.Writer, reader *bufio.Reader, prompt string, defaultVal string) string {
+	fmt.Fprintf(out, "%s [%s]: ", prompt, defaultVal)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return defaultVal
+	}
+	return line
+}
+
+func promptYesNo(out io.Writer, reader *bufio.Reader, prompt string, defaultVal bool) bool {
+	label := "y/N"
+	if defaultVal {
+		label = "Y/n"
+	}
+	fmt.Fprintf(out, "%s [%s]: ", prompt, label)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(strings.ToLower(line))
+	if line == "" {
+		return defaultVal
+	}
+	return line == "y" || line == "yes"
+}
+
+func promptString(out io.Writer, reader *bufio.Reader, prompt string, defaultVal string) string {
+	fmt.Fprintf(out, "%s ", prompt)
+	if defaultVal != "" {
+		fmt.Fprintf(out, "(default: %s)", defaultVal)
+	}
+	fmt.Fprint(out, ": ")
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return defaultVal
+	}
+	return line
 }
 
 func newGuardrailCommand(container *app.Container) *cobra.Command {
@@ -842,6 +1056,21 @@ func newGuardrailCommand(container *app.Container) *cobra.Command {
 
 	guardrailCmd.AddCommand(showCmd, validateCmd, whitelistCmd, confirmCmd, previewCmd)
 	return guardrailCmd
+}
+
+func newInitCommand(container *app.Container) *cobra.Command {
+	var providerKey string
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Interactive configuration wizard",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInitWizard(cmd, container, providerKey, force)
+		},
+	}
+	cmd.Flags().StringVar(&providerKey, "provider", "", "Default provider (anthropic|openai|ollama)")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing config without prompting")
+	return cmd
 }
 
 func newModelsCommand(container *app.Container) *cobra.Command {

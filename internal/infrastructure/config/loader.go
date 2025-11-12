@@ -3,9 +3,11 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -97,6 +99,23 @@ func (l *FileLoader) Reset() (domain.Config, error) {
 		return domain.Config{}, err
 	}
 	return cfg, nil
+}
+
+// Backup copies the current config file to a timestamped backup.
+func (l *FileLoader) Backup() (string, error) {
+	path := l.resolvePath()
+	if _, err := os.Stat(path); err != nil {
+		return "", err
+	}
+	backup := fmt.Sprintf("%s.%s.bak", path, time.Now().Format("20060102T150405"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(backup, data, 0o600); err != nil {
+		return "", err
+	}
+	return backup, nil
 }
 
 func defaultConfig() domain.Config {
@@ -192,4 +211,9 @@ Current environment:
 			Content: "{{.Prompt}}",
 		},
 	}
+}
+
+// DefaultConfig exposes the bootstrap configuration template.
+func DefaultConfig() domain.Config {
+	return defaultConfig()
 }
