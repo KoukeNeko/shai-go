@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/doeshing/shai-go/internal/domain"
@@ -61,7 +62,7 @@ func (f *FileStore) Clear() error {
 }
 
 // Records loads all history entries (best-effort).
-func (f *FileStore) Records() ([]domain.HistoryRecord, error) {
+func (f *FileStore) Records(limit int, search string) ([]domain.HistoryRecord, error) {
 	data, err := os.ReadFile(f.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -77,10 +78,25 @@ func (f *FileStore) Records() ([]domain.HistoryRecord, error) {
 		}
 		var rec domain.HistoryRecord
 		if err := json.Unmarshal(line, &rec); err == nil {
+			if search != "" && !strings.Contains(rec.Command, search) && !strings.Contains(rec.Prompt, search) {
+				continue
+			}
 			records = append(records, rec)
+		}
+		if limit > 0 && len(records) >= limit {
+			break
 		}
 	}
 	return records, nil
+}
+
+// ExportJSON writes history entries to the given destination as jsonl.
+func (f *FileStore) ExportJSON(dest string) error {
+	data, err := os.ReadFile(f.path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dest, data, 0o644)
 }
 
 func userHome() string {
@@ -90,4 +106,4 @@ func userHome() string {
 	return "."
 }
 
-var _ ports.HistoryStore = (*FileStore)(nil)
+var _ ports.HistoryRepository = (*FileStore)(nil)

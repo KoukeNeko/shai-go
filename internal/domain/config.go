@@ -16,6 +16,7 @@ type Preferences struct {
 	AutoExecuteSafe bool   `yaml:"auto_execute_safe"`
 	PreviewMode     string `yaml:"preview_mode"`
 	TimeoutSeconds  int    `yaml:"timeout"`
+	FallbackModels  []string `yaml:"fallback_models"`
 }
 
 // ContextSettings configures context collection.

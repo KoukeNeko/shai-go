@@ -15,6 +15,9 @@ func RenderResponse(resp domain.QueryResponse) {
 	if resp.FromCache {
 		fmt.Println("Note: result served from cache")
 	}
+	if resp.ModelUsed != "" {
+		fmt.Printf("Model: %s\n", resp.ModelUsed)
+	}
 
 	fmt.Println()
 	fmt.Println("Generated Command:")

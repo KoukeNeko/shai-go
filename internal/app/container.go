@@ -24,8 +24,8 @@ type Container struct {
 	ConfigLoader    *config.FileLoader
 	ShellIntegrator ports.ShellIntegrator
 	DoctorService   *doctor.Service
-	HistoryStore    *history.FileStore
-	CacheStore      *cache.FileCache
+	HistoryStore    ports.HistoryRepository
+	CacheStore      ports.CacheRepository
 }
 
 // BuildContainer constructs the dependency graph.
@@ -38,7 +38,7 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 
 	log := logger.NewStd(verbose)
 	collector := contextcollector.NewBasicCollector()
-	historyStore := history.NewFileStore()
+	historyStore := history.NewSQLiteStore()
 	cacheStore := cache.NewFileCache()
 
 	guardrail, err := security.NewGuardrail(cfg.Security.RulesFile)

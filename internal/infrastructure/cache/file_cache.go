@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/ports"
@@ -12,14 +14,18 @@ import (
 
 // FileCache stores provider responses as JSON blobs addressed by hash key.
 type FileCache struct {
-	dir string
-	mu  sync.Mutex
+	dir        string
+	mu         sync.Mutex
+	maxEntries int
+	ttl        time.Duration
 }
 
 // NewFileCache returns a cache rooted under ~/.shai/cache/responses.
 func NewFileCache() *FileCache {
 	return &FileCache{
-		dir: filepath.Join(userHome(), ".shai", "cache", "responses"),
+		dir:        filepath.Join(userHome(), ".shai", "cache", "responses"),
+		maxEntries: 100,
+		ttl:        time.Hour,
 	}
 }
 
@@ -40,6 +46,10 @@ func (c *FileCache) Get(key string) (domain.CacheEntry, bool, error) {
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return domain.CacheEntry{}, false, err
 	}
+	if c.ttl > 0 && time.Since(entry.CreatedAt) > c.ttl {
+		_ = os.Remove(path)
+		return domain.CacheEntry{}, false, nil
+	}
 	return entry, true, nil
 }
 
@@ -57,7 +67,10 @@ func (c *FileCache) Set(entry domain.CacheEntry) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.pathFor(entry.Key), data, 0o644)
+	if err := os.WriteFile(c.pathFor(entry.Key), data, 0o644); err != nil {
+		return err
+	}
+	return c.evictIfNeeded()
 }
 
 // Dir exposes the cache directory path.
@@ -107,4 +120,43 @@ func userHome() string {
 	return "."
 }
 
+func (c *FileCache) evictIfNeeded() error {
+	if c.maxEntries <= 0 {
+		return nil
+	}
+	files, err := os.ReadDir(c.dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(files) <= c.maxEntries {
+		return nil
+	}
+	type fileInfo struct {
+		name string
+		mod  time.Time
+	}
+	var infos []fileInfo
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		info, err := f.Info()
+		if err != nil {
+			continue
+		}
+		infos = append(infos, fileInfo{name: f.Name(), mod: info.ModTime()})
+	}
+	sort.Slice(infos, func(i, j int) bool { return infos[i].mod.Before(infos[j].mod) })
+	for len(infos) > c.maxEntries {
+		old := infos[0]
+		_ = os.Remove(filepath.Join(c.dir, old.name))
+		infos = infos[1:]
+	}
+	return nil
+}
+
 var _ ports.CacheStore = (*FileCache)(nil)
+var _ ports.CacheRepository = (*FileCache)(nil)

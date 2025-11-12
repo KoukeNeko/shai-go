@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,7 +17,9 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/infrastructure/ai"
 	"github.com/doeshing/shai-go/internal/infrastructure/config"
+	"github.com/doeshing/shai-go/internal/ports"
 )
 
 func newInstallCommand(container *app.Container) *cobra.Command {
@@ -333,15 +335,9 @@ func newHistoryCommand(container *app.Container) *cobra.Command {
 			if store == nil {
 				return fmt.Errorf("history store unavailable")
 			}
-			records, err := store.Records()
+			records, err := store.Records(limit, "")
 			if err != nil {
 				return err
-			}
-			sort.Slice(records, func(i, j int) bool {
-				return records[i].Timestamp.After(records[j].Timestamp)
-			})
-			if limit > 0 && len(records) > limit {
-				records = records[:limit]
 			}
 			for _, rec := range records {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s | %s | %s | %s\n",
@@ -356,6 +352,7 @@ func newHistoryCommand(container *app.Container) *cobra.Command {
 	listCmd.Flags().IntVar(&limit, "limit", 20, "Max entries to show")
 
 	var query string
+	var searchLimit int
 	searchCmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search history for a keyword",
@@ -367,19 +364,18 @@ func newHistoryCommand(container *app.Container) *cobra.Command {
 			if query == "" {
 				return fmt.Errorf("--query required")
 			}
-			records, err := store.Records()
+			records, err := store.Records(searchLimit, query)
 			if err != nil {
 				return err
 			}
 			for _, rec := range records {
-				if strings.Contains(rec.Command, query) || strings.Contains(rec.Prompt, query) {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s | %s\n", rec.Timestamp.Format(time.RFC3339), rec.Command)
-				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s | %s\n", rec.Timestamp.Format(time.RFC3339), rec.Command)
 			}
 			return nil
 		},
 	}
 	searchCmd.Flags().StringVar(&query, "query", "", "Search keyword")
+	searchCmd.Flags().IntVar(&searchLimit, "limit", 50, "Limit search results")
 
 	clearCmd := &cobra.Command{
 		Use:   "clear",
@@ -401,13 +397,7 @@ func newHistoryCommand(container *app.Container) *cobra.Command {
 			if store == nil {
 				return fmt.Errorf("history store unavailable")
 			}
-			src := store.Path()
-			dest := args[0]
-			data, err := os.ReadFile(src)
-			if err != nil {
-				return err
-			}
-			return os.WriteFile(dest, data, 0o644)
+			return store.ExportJSON(args[0])
 		},
 	}
 
@@ -476,4 +466,253 @@ func newCacheCommand(container *app.Container) *cobra.Command {
 
 	cacheCmd.AddCommand(listCmd, clearCmd, sizeCmd)
 	return cacheCmd
+}
+
+func runModelsList(ctx context.Context, out io.Writer, container *app.Container) error {
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "NAME\tMODEL ID\tENDPOINT\tDEFAULT\n")
+	for _, model := range cfg.Models {
+		def := ""
+		if cfg.Preferences.DefaultModel == model.Name {
+			def = "*"
+		}
+		fmt.Fprintf(out, "%s\t%s\t%s\t%s\n", model.Name, model.ModelID, model.Endpoint, def)
+	}
+	if len(cfg.Preferences.FallbackModels) > 0 {
+		fmt.Fprintf(out, "Fallbacks: %s\n", strings.Join(cfg.Preferences.FallbackModels, ", "))
+	}
+	return nil
+}
+
+func runModelsTest(ctx context.Context, out io.Writer, container *app.Container, name string) error {
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	model, ok := findModel(cfg, name)
+	if !ok {
+		return fmt.Errorf("model %s not found", name)
+	}
+	provider, err := ai.NewFactory().ForModel(model)
+	if err != nil {
+		return err
+	}
+	testCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	snapshot := domain.ContextSnapshot{
+		WorkingDir: ".",
+		Shell:      "sh",
+		OS:         runtime.GOOS,
+	}
+	_, err = provider.Generate(testCtx, ports.ProviderRequest{
+		Prompt:  "echo testing",
+		Context: snapshot,
+		Model:   model,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Model %s responded successfully.\n", name)
+	return nil
+}
+
+func runModelsUse(ctx context.Context, container *app.Container, name string) error {
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if _, ok := findModel(cfg, name); !ok {
+		return fmt.Errorf("model %s not found", name)
+	}
+	cfg.Preferences.DefaultModel = name
+	return saveConfig(container, cfg)
+}
+
+type modelAddOptions struct {
+	Name       string
+	Endpoint   string
+	ModelID    string
+	AuthEnv    string
+	OrgEnv     string
+	PromptFile string
+	MaxTokens  int
+}
+
+func runModelsAdd(ctx context.Context, container *app.Container, opts modelAddOptions) error {
+	if opts.Name == "" || opts.Endpoint == "" {
+		return fmt.Errorf("--name and --endpoint are required")
+	}
+	if opts.MaxTokens == 0 {
+		opts.MaxTokens = 1024
+	}
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if _, ok := findModel(cfg, opts.Name); ok {
+		return fmt.Errorf("model %s already exists", opts.Name)
+	}
+	var prompts []domain.PromptMessage
+	if opts.PromptFile != "" {
+		prompts, err = loadPromptFile(opts.PromptFile)
+		if err != nil {
+			return err
+		}
+	}
+	model := domain.ModelDefinition{
+		Name:       opts.Name,
+		Endpoint:   opts.Endpoint,
+		ModelID:    opts.ModelID,
+		AuthEnvVar: opts.AuthEnv,
+		OrgEnvVar:  opts.OrgEnv,
+		MaxTokens:  opts.MaxTokens,
+		Prompt:     prompts,
+	}
+	cfg.Models = append(cfg.Models, model)
+	return saveConfig(container, cfg)
+}
+
+func runModelsRemove(ctx context.Context, container *app.Container, name string) error {
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i, model := range cfg.Models {
+		if model.Name == name {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return fmt.Errorf("model %s not found", name)
+	}
+	cfg.Models = append(cfg.Models[:index], cfg.Models[index+1:]...)
+	if cfg.Preferences.DefaultModel == name {
+		if len(cfg.Models) > 0 {
+			cfg.Preferences.DefaultModel = cfg.Models[0].Name
+		} else {
+			cfg.Preferences.DefaultModel = ""
+		}
+	}
+	var filtered []string
+	for _, fallback := range cfg.Preferences.FallbackModels {
+		if fallback == name {
+			continue
+		}
+		filtered = append(filtered, fallback)
+	}
+	cfg.Preferences.FallbackModels = filtered
+	return saveConfig(container, cfg)
+}
+
+func saveConfig(container *app.Container, cfg domain.Config) error {
+	loader, err := configLoader(container)
+	if err != nil {
+		return err
+	}
+	return loader.Save(cfg)
+}
+
+func loadPromptFile(path string) ([]domain.PromptMessage, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var prompts []domain.PromptMessage
+	if err := yaml.Unmarshal(data, &prompts); err != nil {
+		return nil, err
+	}
+	return prompts, nil
+}
+
+func findModel(cfg domain.Config, name string) (domain.ModelDefinition, bool) {
+	for _, model := range cfg.Models {
+		if model.Name == name {
+			return model, true
+		}
+	}
+	return domain.ModelDefinition{}, false
+}
+
+func newModelsCommand(container *app.Container) *cobra.Command {
+	modelsCmd := &cobra.Command{
+		Use:   "models",
+		Short: "Manage AI model configurations",
+	}
+
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List configured models",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runModelsList(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+
+	testCmd := &cobra.Command{
+		Use:   "test <name>",
+		Short: "Test connectivity for a model",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runModelsTest(cmd.Context(), cmd.OutOrStdout(), container, args[0])
+		},
+	}
+
+	useCmd := &cobra.Command{
+		Use:   "use <name>",
+		Short: "Set default model",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runModelsUse(cmd.Context(), container, args[0])
+		},
+	}
+
+	var (
+		addName       string
+		addEndpoint   string
+		addModelID    string
+		addAuthEnv    string
+		addOrgEnv     string
+		addPromptFile string
+		addMaxTokens  int
+	)
+
+	addCmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add a new model definition",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := modelAddOptions{
+				Name:       addName,
+				Endpoint:   addEndpoint,
+				ModelID:    addModelID,
+				AuthEnv:    addAuthEnv,
+				OrgEnv:     addOrgEnv,
+				PromptFile: addPromptFile,
+				MaxTokens:  addMaxTokens,
+			}
+			return runModelsAdd(cmd.Context(), container, opts)
+		},
+	}
+	addCmd.Flags().StringVar(&addName, "name", "", "Model name (identifier)")
+	addCmd.Flags().StringVar(&addEndpoint, "endpoint", "", "Provider endpoint URL")
+	addCmd.Flags().StringVar(&addModelID, "model-id", "", "Model identifier at provider")
+	addCmd.Flags().StringVar(&addAuthEnv, "auth-env", "", "Environment variable containing API key")
+	addCmd.Flags().StringVar(&addOrgEnv, "org-env", "", "Environment variable containing org/project ID")
+	addCmd.Flags().StringVar(&addPromptFile, "prompt-file", "", "Path to YAML prompt template for this model")
+	addCmd.Flags().IntVar(&addMaxTokens, "max-tokens", 1024, "Max tokens for responses")
+
+	removeCmd := &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove model definition",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runModelsRemove(cmd.Context(), container, args[0])
+		},
+	}
+
+	modelsCmd.AddCommand(listCmd, testCmd, useCmd, addCmd, removeCmd)
+	return modelsCmd
 }

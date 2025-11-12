@@ -19,6 +19,8 @@ type Guardrail struct {
 	patterns     []compiledPattern
 	pathRules    []domain.ProtectedPath
 	previewLimit int
+	confirmation map[domain.RiskLevel]domain.ConfirmationLevel
+	whitelist    []string
 }
 
 type compiledPattern struct {
@@ -29,9 +31,11 @@ type compiledPattern struct {
 // RulesFile is the YAML schema root.
 type RulesFile struct {
 	Rules struct {
-		DangerPatterns []domain.DangerPattern `yaml:"danger_patterns"`
-		ProtectedPaths []domain.ProtectedPath `yaml:"protected_paths"`
-		Preview        domain.PreviewRules    `yaml:"preview"`
+		DangerPatterns []domain.DangerPattern              `yaml:"danger_patterns"`
+		ProtectedPaths []domain.ProtectedPath              `yaml:"protected_paths"`
+		Preview        domain.PreviewRules                 `yaml:"preview"`
+		Confirmation   map[string]domain.ConfirmationLevel `yaml:"confirmation_levels"`
+		Whitelist      []string                            `yaml:"whitelist"`
 	} `yaml:"rules"`
 }
 
@@ -59,10 +63,17 @@ func NewGuardrail(path string) (*Guardrail, error) {
 		previewLimit = 10
 	}
 
+	confirmation := map[domain.RiskLevel]domain.ConfirmationLevel{}
+	for level, config := range rules.Rules.Confirmation {
+		confirmation[parseRiskLevel(level)] = config
+	}
+
 	return &Guardrail{
 		patterns:     compiled,
 		pathRules:    rules.Rules.ProtectedPaths,
 		previewLimit: previewLimit,
+		confirmation: confirmation,
+		whitelist:    rules.Rules.Whitelist,
 	}, nil
 }
 
@@ -70,6 +81,13 @@ func NewGuardrail(path string) (*Guardrail, error) {
 func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 	if g == nil {
 		return domain.RiskAssessment{}, errors.New("guardrail nil")
+	}
+	command = strings.TrimSpace(command)
+	if g.isWhitelisted(command) {
+		return domain.RiskAssessment{
+			Level:  domain.RiskSafe,
+			Action: domain.ActionAllow,
+		}, nil
 	}
 	assessment := domain.RiskAssessment{
 		Level:  domain.RiskSafe,
@@ -99,6 +117,13 @@ func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 	assessment.ProtectedPaths = append(assessment.ProtectedPaths, pathAssessment.ProtectedPaths...)
 	assessment.PreviewEntries = append(assessment.PreviewEntries, pathAssessment.PreviewEntries...)
 
+	if levelConfig, ok := g.confirmation[assessment.Level]; ok {
+		assessment.Action = parseAction(levelConfig.Action, assessment.Level)
+		if levelConfig.Message != "" {
+			assessment.Reasons = append(assessment.Reasons, levelConfig.Message)
+		}
+	}
+
 	return assessment, nil
 }
 
@@ -124,6 +149,12 @@ func loadRules(path string) (RulesFile, error) {
 	}
 	if rules.Rules.Preview.MaxFiles == 0 {
 		rules.Rules.Preview.MaxFiles = 10
+	}
+	if len(rules.Rules.Confirmation) == 0 {
+		rules.Rules.Confirmation = defaultConfirmation()
+	}
+	if len(rules.Rules.Whitelist) == 0 {
+		rules.Rules.Whitelist = defaultWhitelist()
 	}
 	return rules, nil
 }
@@ -210,6 +241,19 @@ func defaultProtectedPaths() []domain.ProtectedPath {
 	}
 }
 
+func defaultConfirmation() map[string]domain.ConfirmationLevel {
+	return map[string]domain.ConfirmationLevel{
+		"critical": {Action: "block", Message: "This action is blocked by guardrail policy."},
+		"high":     {Action: "explicit_confirm", Message: "Type 'yes' to execute this high-risk operation."},
+		"medium":   {Action: "confirm", Message: "Review the command carefully before continuing."},
+		"low":      {Action: "simple_confirm", Message: "Confirm execution of this low-risk change."},
+	}
+}
+
+func defaultWhitelist() []string {
+	return []string{"ls", "pwd", "echo", "cat", "grep", "find", "git status"}
+}
+
 func (g *Guardrail) evaluateProtectedPaths(command string) domain.RiskAssessment {
 	result := domain.RiskAssessment{
 		Level:  domain.RiskSafe,
@@ -233,6 +277,18 @@ func (g *Guardrail) evaluateProtectedPaths(command string) domain.RiskAssessment
 		}
 	}
 	return result
+}
+
+func (g *Guardrail) isWhitelisted(command string) bool {
+	for _, safe := range g.whitelist {
+		if safe == "" {
+			continue
+		}
+		if command == safe || strings.HasPrefix(command, safe+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesPathRule(tokens []string, rule domain.ProtectedPath) bool {

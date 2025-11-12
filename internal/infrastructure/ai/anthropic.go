@@ -82,11 +82,13 @@ func (p *anthropicProvider) Generate(ctx context.Context, req ports.ProviderRequ
 
 	content := decoded.FirstText()
 	command := extractCommand(content)
-	return ports.ProviderResponse{
+	result := ports.ProviderResponse{
 		Command:   command,
 		Reply:     content,
 		Reasoning: "Generated via Claude",
-	}, nil
+	}
+	emitStream(req, content)
+	return result, nil
 }
 
 func extractCommand(content string) string {

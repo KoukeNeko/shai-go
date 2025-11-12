@@ -49,6 +49,7 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	root.AddCommand(newDoctorCommand(container))
 	root.AddCommand(newHistoryCommand(container))
 	root.AddCommand(newCacheCommand(container))
+	root.AddCommand(newModelsCommand(container))
 	return root, nil
 }
 
@@ -63,6 +64,7 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 		withK8s     bool
 		debug       bool
 		timeout     time.Duration
+		stream      bool
 	)
 
 	cmd := &cobra.Command{
@@ -87,6 +89,10 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 				WithEnv:         withEnv,
 				WithK8sInfo:     withK8s,
 				Debug:           debug,
+				Stream:          stream,
+			}
+			if stream {
+				req.StreamWriter = NewStreamWriter(cmd.OutOrStdout())
 			}
 			resp, err := container.QueryService.Run(req)
 			RenderResponse(resp)
@@ -103,6 +109,7 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 	cmd.Flags().BoolVar(&withK8s, "with-k8s-info", false, "Include Kubernetes context")
 	cmd.Flags().BoolVar(&debug, "debug", false, "Enable verbose logging")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "Override request timeout")
+	cmd.Flags().BoolVar(&stream, "stream", false, "Stream provider reasoning output")
 
 	return cmd
 }

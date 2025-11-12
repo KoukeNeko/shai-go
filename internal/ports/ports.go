@@ -31,10 +31,12 @@ type Provider interface {
 
 // ProviderRequest is fed into the AI provider.
 type ProviderRequest struct {
-	Prompt  string
-	Context domain.ContextSnapshot
-	Model   domain.ModelDefinition
-	Debug   bool
+	Prompt       string
+	Context      domain.ContextSnapshot
+	Model        domain.ModelDefinition
+	Debug        bool
+	Stream       bool
+	StreamWriter domain.StreamWriter
 }
 
 // ProviderResponse returns a suggested command and reasoning.
@@ -79,10 +81,27 @@ type HistoryStore interface {
 	Save(record domain.HistoryRecord) error
 }
 
+// HistoryRepository extends HistoryStore with query utilities.
+type HistoryRepository interface {
+	HistoryStore
+	Records(limit int, search string) ([]domain.HistoryRecord, error)
+	Clear() error
+	ExportJSON(path string) error
+	Path() string
+}
+
 // CacheStore stores provider responses keyed by context hash.
 type CacheStore interface {
 	Get(key string) (domain.CacheEntry, bool, error)
 	Set(entry domain.CacheEntry) error
+}
+
+// CacheRepository extends CacheStore with management utilities.
+type CacheRepository interface {
+	CacheStore
+	Entries() ([]domain.CacheEntry, error)
+	Clear() error
+	Dir() string
 }
 
 // Logger is a minimal logging facade for application layer.

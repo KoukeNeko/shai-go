@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
@@ -54,7 +55,7 @@ func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 		return domain.QueryResponse{}, err
 	}
 
-	aiResp, fromCache, err := s.generateCommand(ctx, modelDef, req, ctxSnapshot)
+	aiResp, fromCache, modelUsed, err := s.generateCommand(ctx, cfg, modelDef, req, ctxSnapshot)
 	if err != nil {
 		return domain.QueryResponse{}, err
 	}
@@ -71,6 +72,7 @@ func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 		RiskAssessment:     risk,
 		ContextInformation: ctxSnapshot,
 		FromCache:          fromCache,
+		ModelUsed:          modelUsed,
 	}
 
 	if req.CopyToClipboard && s.Clipboard != nil && s.Clipboard.Enabled() {
@@ -140,42 +142,115 @@ func pickModel(cfg domain.Config, override string) (domain.ModelDefinition, erro
 	if name == "" && len(cfg.Models) > 0 {
 		return cfg.Models[0], nil
 	}
-	for _, model := range cfg.Models {
-		if model.Name == name {
-			return model, nil
-		}
+	if model, ok := findModel(cfg, name); ok {
+		return model, nil
 	}
 	return domain.ModelDefinition{}, fmt.Errorf("model %s not configured", name)
 }
 
-func (s *Service) generateCommand(ctx context.Context, modelDef domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, error) {
-	cacheKey := ""
-	if s.CacheStore != nil {
-		cacheKey = cacheKeyFor(modelDef, req, snapshot)
-		if entry, ok, err := s.CacheStore.Get(cacheKey); err == nil && ok {
-			return ports.ProviderResponse{
-				Command:   entry.Command,
-				Reply:     entry.Reply,
-				Reasoning: entry.Reasoning,
-			}, true, nil
+func findModel(cfg domain.Config, name string) (domain.ModelDefinition, bool) {
+	for _, model := range cfg.Models {
+		if model.Name == name {
+			return model, true
+		}
+	}
+	return domain.ModelDefinition{}, false
+}
+
+func (s *Service) generateCommand(ctx context.Context, cfg domain.Config, primary domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, string, error) {
+	candidates := s.buildCandidateModels(cfg, primary)
+	if len(candidates) == 0 {
+		return ports.ProviderResponse{}, false, "", fmt.Errorf("no providers available")
+	}
+
+	type result struct {
+		resp      ports.ProviderResponse
+		fromCache bool
+		modelName string
+		err       error
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan result, len(candidates))
+	var wg sync.WaitGroup
+
+	for _, model := range candidates {
+		wg.Add(1)
+		go func(model domain.ModelDefinition) {
+			defer wg.Done()
+			resp, fromCache, err := s.generateWithModel(ctx, model, req, snapshot)
+			results <- result{resp: resp, fromCache: fromCache, modelName: model.Name, err: err}
+		}(model)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var errs []error
+	var success *result
+	for res := range results {
+		if res.err == nil && success == nil {
+			success = &res
+			cancel()
+			continue
+		}
+		if res.err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", res.modelName, res.err))
 		}
 	}
 
-	provider, err := s.ProviderFactory.ForModel(modelDef)
+	if success != nil {
+		if req.Stream && req.StreamWriter != nil {
+			req.StreamWriter.WriteChunk(success.resp.Reasoning)
+			req.StreamWriter.Done()
+		}
+		return success.resp, success.fromCache, success.modelName, nil
+	}
+
+	if len(errs) == 0 {
+		return ports.ProviderResponse{}, false, "", fmt.Errorf("no provider succeeded")
+	}
+	return ports.ProviderResponse{}, false, "", errors.Join(errs...)
+}
+
+func (s *Service) generateWithModel(ctx context.Context, model domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, error) {
+	cacheKey := ""
+	if s.CacheStore != nil {
+		cacheKey = cacheKeyFor(model, req, snapshot)
+		if entry, ok, err := s.CacheStore.Get(cacheKey); err == nil && ok {
+			resp := ports.ProviderResponse{
+				Command:   entry.Command,
+				Reply:     entry.Reply,
+				Reasoning: entry.Reasoning,
+			}
+			if req.Stream && req.StreamWriter != nil {
+				req.StreamWriter.WriteChunk(resp.Reasoning)
+				req.StreamWriter.Done()
+			}
+			return resp, true, nil
+		}
+	}
+
+	provider, err := s.ProviderFactory.ForModel(model)
 	if err != nil {
 		return ports.ProviderResponse{}, false, fmt.Errorf("provider init: %w", err)
 	}
 
 	s.Logger.Info("calling provider", map[string]interface{}{
 		"provider": provider.Name(),
-		"model":    modelDef.ModelID,
+		"model":    model.ModelID,
 	})
 
 	aiResp, err := provider.Generate(ctx, ports.ProviderRequest{
-		Prompt:  req.Prompt,
-		Context: snapshot,
-		Model:   modelDef,
-		Debug:   req.Debug,
+		Prompt:       req.Prompt,
+		Context:      snapshot,
+		Model:        model,
+		Debug:        req.Debug,
+		Stream:       req.Stream,
+		StreamWriter: req.StreamWriter,
 	})
 	if err != nil {
 		return ports.ProviderResponse{}, false, fmt.Errorf("provider generate: %w", err)
@@ -187,12 +262,28 @@ func (s *Service) generateCommand(ctx context.Context, modelDef domain.ModelDefi
 			Command:   aiResp.Command,
 			Reply:     aiResp.Reply,
 			Reasoning: aiResp.Reasoning,
-			Model:     modelDef.Name,
+			Model:     model.Name,
 			CreatedAt: timeNow(),
 		})
 	}
 
 	return aiResp, false, nil
+}
+
+func (s *Service) buildCandidateModels(cfg domain.Config, primary domain.ModelDefinition) []domain.ModelDefinition {
+	var candidates []domain.ModelDefinition
+	candidates = append(candidates, primary)
+	seen := map[string]bool{primary.Name: true}
+	for _, name := range cfg.Preferences.FallbackModels {
+		if seen[name] {
+			continue
+		}
+		if model, ok := findModel(cfg, name); ok {
+			candidates = append(candidates, model)
+			seen[name] = true
+		}
+	}
+	return candidates
 }
 
 func (s *Service) persistHistory(req domain.QueryRequest, model domain.ModelDefinition, resp domain.QueryResponse, exec *domain.ExecutionResult) {
@@ -203,7 +294,7 @@ func (s *Service) persistHistory(req domain.QueryRequest, model domain.ModelDefi
 		Timestamp: timeNow(),
 		Prompt:    req.Prompt,
 		Command:   resp.Command,
-		Model:     model.Name,
+		Model:     firstNonEmpty(resp.ModelUsed, model.Name),
 		RiskLevel: resp.RiskAssessment.Level,
 	}
 	if exec != nil {
@@ -229,3 +320,12 @@ func cacheKeyFor(model domain.ModelDefinition, req domain.QueryRequest, snapshot
 }
 
 var timeNow = func() time.Time { return time.Now() }
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}

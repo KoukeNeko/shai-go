@@ -14,6 +14,8 @@ type QueryRequest struct {
 	WithEnv         bool
 	WithK8sInfo     bool
 	Debug           bool
+	Stream          bool
+	StreamWriter    StreamWriter
 }
 
 // QueryResponse is the canonical response propagated back to the CLI.
@@ -26,6 +28,7 @@ type QueryResponse struct {
 	ExecutionResult    *ExecutionResult
 	ContextInformation ContextSnapshot
 	FromCache          bool
+	ModelUsed          string
 }
 
 // ExecutionResult wraps details from the command executor.
@@ -42,4 +45,10 @@ type ExecutionResult struct {
 // QueryService exposes the use-case boundary for handling a query.
 type QueryService interface {
 	Run(QueryRequest) (QueryResponse, error)
+}
+
+// StreamWriter is used to stream incremental output to the caller.
+type StreamWriter interface {
+	WriteChunk(text string)
+	Done()
 }

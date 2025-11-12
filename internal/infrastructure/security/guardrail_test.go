@@ -54,3 +54,17 @@ func TestGuardrailProtectedPath(t *testing.T) {
 		t.Log("No preview entries available for /etc on this system; continuing")
 	}
 }
+
+func TestGuardrailWhitelist(t *testing.T) {
+	guardrail, err := NewGuardrail("")
+	if err != nil {
+		t.Fatalf("NewGuardrail error: %v", err)
+	}
+	result, err := guardrail.Evaluate("ls")
+	if err != nil {
+		t.Fatalf("Evaluate error: %v", err)
+	}
+	if result.Level != domain.RiskSafe || result.Action != domain.ActionAllow {
+		t.Fatalf("whitelisted command should be safe: %+v", result)
+	}
+}

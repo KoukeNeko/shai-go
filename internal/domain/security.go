@@ -38,6 +38,8 @@ type GuardrailRules struct {
 	DangerPatterns []DangerPattern
 	ProtectedPaths []ProtectedPath
 	Preview        PreviewRules
+	Confirmation   map[string]ConfirmationLevel
+	Whitelist      []string
 }
 
 // DangerPattern is a regex-based rule loaded from YAML.
@@ -59,4 +61,10 @@ type ProtectedPath struct {
 // PreviewRules controls preview listings.
 type PreviewRules struct {
 	MaxFiles int `yaml:"max_files"`
+}
+
+// ConfirmationLevel customizes messaging per risk level.
+type ConfirmationLevel struct {
+	Action  string `yaml:"action"`
+	Message string `yaml:"message"`
 }
