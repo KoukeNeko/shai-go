@@ -31,6 +31,8 @@ type RiskAssessment struct {
 	ProtectedPaths []string
 	MatchedRules   []string
 	PreviewEntries []string
+	DryRunCommand  string
+	UndoHints      []string
 }
 
 // GuardrailRules is the in-memory representation of YAML guardrail configuration.

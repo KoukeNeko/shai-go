@@ -28,8 +28,8 @@ type compiledPattern struct {
 	rule domain.DangerPattern
 }
 
-// RulesFile is the YAML schema root.
-type RulesFile struct {
+// PolicyDocument is the YAML schema root.
+type PolicyDocument struct {
 	Rules struct {
 		DangerPatterns []domain.DangerPattern              `yaml:"danger_patterns"`
 		ProtectedPaths []domain.ProtectedPath              `yaml:"protected_paths"`
@@ -41,13 +41,13 @@ type RulesFile struct {
 
 // NewGuardrail loads guardrail rules from disk (or defaults when missing).
 func NewGuardrail(path string) (*Guardrail, error) {
-	rules, err := loadRules(path)
+	doc, err := loadRules(path)
 	if err != nil {
 		return nil, err
 	}
 
 	var compiled []compiledPattern
-	for _, pattern := range rules.Rules.DangerPatterns {
+	for _, pattern := range doc.Rules.DangerPatterns {
 		re, err := regexp.Compile(pattern.Pattern)
 		if err != nil {
 			return nil, err
@@ -58,22 +58,22 @@ func NewGuardrail(path string) (*Guardrail, error) {
 		})
 	}
 
-	previewLimit := rules.Rules.Preview.MaxFiles
+	previewLimit := doc.Rules.Preview.MaxFiles
 	if previewLimit == 0 {
 		previewLimit = 10
 	}
 
 	confirmation := map[domain.RiskLevel]domain.ConfirmationLevel{}
-	for level, config := range rules.Rules.Confirmation {
+	for level, config := range doc.Rules.Confirmation {
 		confirmation[parseRiskLevel(level)] = config
 	}
 
 	return &Guardrail{
 		patterns:     compiled,
-		pathRules:    rules.Rules.ProtectedPaths,
+		pathRules:    doc.Rules.ProtectedPaths,
 		previewLimit: previewLimit,
 		confirmation: confirmation,
-		whitelist:    rules.Rules.Whitelist,
+		whitelist:    doc.Rules.Whitelist,
 	}, nil
 }
 
@@ -116,6 +116,7 @@ func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 	assessment.Reasons = append(assessment.Reasons, pathAssessment.Reasons...)
 	assessment.ProtectedPaths = append(assessment.ProtectedPaths, pathAssessment.ProtectedPaths...)
 	assessment.PreviewEntries = append(assessment.PreviewEntries, pathAssessment.PreviewEntries...)
+	enrichAssessment(command, &assessment)
 
 	if levelConfig, ok := g.confirmation[assessment.Level]; ok {
 		assessment.Action = parseAction(levelConfig.Action, assessment.Level)
@@ -127,8 +128,8 @@ func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 	return assessment, nil
 }
 
-func loadRules(path string) (RulesFile, error) {
-	var rules RulesFile
+func loadRules(path string) (PolicyDocument, error) {
+	var rules PolicyDocument
 	path = expandPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -139,7 +140,7 @@ func loadRules(path string) (RulesFile, error) {
 		return rules, nil
 	}
 	if err := yaml.Unmarshal(data, &rules); err != nil {
-		return RulesFile{}, err
+		return PolicyDocument{}, err
 	}
 	if len(rules.Rules.DangerPatterns) == 0 {
 		rules.Rules.DangerPatterns = defaultPatterns()
@@ -344,6 +345,49 @@ func previewPath(path string, limit int) []string {
 	return list
 }
 
+func enrichAssessment(command string, assessment *domain.RiskAssessment) {
+	if assessment.Level == domain.RiskSafe {
+		return
+	}
+	if assessment.DryRunCommand == "" {
+		if dry := suggestDryRunCommand(command); dry != "" {
+			assessment.DryRunCommand = dry
+		}
+	}
+	assessment.UndoHints = append(assessment.UndoHints, undoHintsForCommand(command)...)
+}
+
+func suggestDryRunCommand(command string) string {
+	lower := strings.ToLower(command)
+	switch {
+	case strings.Contains(lower, "kubectl apply") && !strings.Contains(lower, "--dry-run"):
+		return command + " --dry-run=client"
+	case strings.HasPrefix(lower, "git ") && !strings.Contains(lower, "status"):
+		return "git status"
+	case strings.HasPrefix(lower, "rm "):
+		parts := strings.SplitN(command, " ", 2)
+		if len(parts) == 2 {
+			return "ls " + parts[1]
+		}
+	}
+	return ""
+}
+
+func undoHintsForCommand(command string) []string {
+	lower := strings.ToLower(command)
+	var hints []string
+	if strings.Contains(lower, "git ") {
+		hints = append(hints, "Use `git status` and `git reflog` to inspect or roll back changes.")
+	}
+	if strings.Contains(lower, "kubectl ") {
+		hints = append(hints, "Use `kubectl rollout undo` or `kubectl get events` if deployment behaves unexpectedly.")
+	}
+	if strings.Contains(lower, "rm ") {
+		hints = append(hints, "Restore from backups or use `git checkout -- <path>` if the file was tracked.")
+	}
+	return hints
+}
+
 func userHomeDir() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
@@ -352,3 +396,26 @@ func userHomeDir() string {
 }
 
 var _ ports.SecurityService = (*Guardrail)(nil)
+
+// LoadPolicyDocument returns the raw YAML structure.
+func LoadPolicyDocument(path string) (PolicyDocument, error) {
+	return loadRules(path)
+}
+
+// SavePolicyDocument writes the YAML structure to disk.
+func SavePolicyDocument(path string, doc PolicyDocument) error {
+	path = expandPath(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// ResolveRulesPath expands the guardrail path to an absolute location.
+func ResolveRulesPath(path string) string {
+	return expandPath(path)
+}

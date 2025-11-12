@@ -71,11 +71,9 @@ func (o *ollamaProvider) Generate(ctx context.Context, req ports.ProviderRequest
 	}
 	content := decoded.FirstMessage()
 	command := extractCommand(content)
-	result := ports.ProviderResponse{
+	return ports.ProviderResponse{
 		Command:   command,
 		Reply:     content,
 		Reasoning: "Generated via Ollama",
-	}
-	emitStream(req, content)
-	return result, nil
+	}, nil
 }

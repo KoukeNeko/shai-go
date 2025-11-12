@@ -80,11 +80,9 @@ func (p *openAIProvider) Generate(ctx context.Context, req ports.ProviderRequest
 	}
 	content := decoded.FirstMessage()
 	command := extractCommand(content)
-	result := ports.ProviderResponse{
+	return ports.ProviderResponse{
 		Command:   command,
 		Reply:     content,
 		Reasoning: "Generated via OpenAI",
-	}
-	emitStream(req, content)
-	return result, nil
+	}, nil
 }

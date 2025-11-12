@@ -68,3 +68,27 @@ func TestGuardrailWhitelist(t *testing.T) {
 		t.Fatalf("whitelisted command should be safe: %+v", result)
 	}
 }
+
+func TestSuggestDryRunCommand(t *testing.T) {
+	tests := []struct {
+		command string
+		expect  string
+	}{
+		{"kubectl apply -f deploy.yaml", "kubectl apply -f deploy.yaml --dry-run=client"},
+		{"git commit -m 'msg'", "git status"},
+		{"rm -rf tmp", "ls -rf tmp"},
+		{"echo hi", ""},
+	}
+	for _, tt := range tests {
+		if got := suggestDryRunCommand(tt.command); got != tt.expect {
+			t.Fatalf("dryRun(%s)=%s want %s", tt.command, got, tt.expect)
+		}
+	}
+}
+
+func TestUndoHintsForCommand(t *testing.T) {
+	hints := undoHintsForCommand("git push && kubectl apply")
+	if len(hints) < 2 {
+		t.Fatalf("expected multiple hints, got %v", hints)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/infrastructure/ai"
 	"github.com/doeshing/shai-go/internal/infrastructure/config"
+	"github.com/doeshing/shai-go/internal/infrastructure/security"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
@@ -636,6 +637,211 @@ func findModel(cfg domain.Config, name string) (domain.ModelDefinition, bool) {
 		}
 	}
 	return domain.ModelDefinition{}, false
+}
+
+func runGuardrailShow(ctx context.Context, out io.Writer, container *app.Container) error {
+	doc, path, err := loadGuardrailDoc(ctx, container)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Policy file: %s\n", path)
+	data, err := yaml.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(out, string(data))
+	return nil
+}
+
+func runGuardrailValidate(ctx context.Context, out io.Writer, container *app.Container) error {
+	path, err := guardrailPath(ctx, container)
+	if err != nil {
+		return err
+	}
+	if _, err := security.NewGuardrail(path); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Guardrail policy at %s is valid.\n", path)
+	return nil
+}
+
+func runGuardrailWhitelistAdd(ctx context.Context, container *app.Container, entry string) error {
+	doc, path, err := loadGuardrailDoc(ctx, container)
+	if err != nil {
+		return err
+	}
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return fmt.Errorf("whitelist entry cannot be empty")
+	}
+	for _, existing := range doc.Rules.Whitelist {
+		if existing == entry {
+			return fmt.Errorf("%s already in whitelist", entry)
+		}
+	}
+	doc.Rules.Whitelist = append(doc.Rules.Whitelist, entry)
+	return security.SavePolicyDocument(path, doc)
+}
+
+func runGuardrailWhitelistRemove(ctx context.Context, container *app.Container, entry string) error {
+	doc, path, err := loadGuardrailDoc(ctx, container)
+	if err != nil {
+		return err
+	}
+	entry = strings.TrimSpace(entry)
+	var filtered []string
+	found := false
+	for _, existing := range doc.Rules.Whitelist {
+		if existing == entry {
+			found = true
+			continue
+		}
+		filtered = append(filtered, existing)
+	}
+	if !found {
+		return fmt.Errorf("%s not found in whitelist", entry)
+ 	}
+	doc.Rules.Whitelist = filtered
+	return security.SavePolicyDocument(path, doc)
+}
+
+func runGuardrailWhitelistList(ctx context.Context, out io.Writer, container *app.Container) error {
+	doc, _, err := loadGuardrailDoc(ctx, container)
+	if err != nil {
+		return err
+	}
+	if len(doc.Rules.Whitelist) == 0 {
+		fmt.Fprintln(out, "Whitelist is empty.")
+		return nil
+	}
+	for _, entry := range doc.Rules.Whitelist {
+		fmt.Fprintln(out, entry)
+	}
+	return nil
+}
+
+func runGuardrailConfirmSet(ctx context.Context, container *app.Container, level string, action string, message string) error {
+	doc, path, err := loadGuardrailDoc(ctx, container)
+	if err != nil {
+		return err
+	}
+	if doc.Rules.Confirmation == nil {
+		doc.Rules.Confirmation = map[string]domain.ConfirmationLevel{}
+	}
+	doc.Rules.Confirmation[level] = domain.ConfirmationLevel{Action: action, Message: message}
+	return security.SavePolicyDocument(path, doc)
+}
+
+func runGuardrailPreviewSet(ctx context.Context, container *app.Container, max int) error {
+	if max <= 0 {
+		return fmt.Errorf("max-files must be >= 1")
+	}
+	doc, path, err := loadGuardrailDoc(ctx, container)
+	if err != nil {
+		return err
+	}
+	doc.Rules.Preview.MaxFiles = max
+	return security.SavePolicyDocument(path, doc)
+}
+
+func guardrailPath(ctx context.Context, container *app.Container) (string, error) {
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return "", err
+	}
+	return security.ResolveRulesPath(cfg.Security.RulesFile), nil
+}
+
+func loadGuardrailDoc(ctx context.Context, container *app.Container) (security.PolicyDocument, string, error) {
+	path, err := guardrailPath(ctx, container)
+	if err != nil {
+		return security.PolicyDocument{}, "", err
+	}
+	doc, err := security.LoadPolicyDocument(path)
+	if err != nil {
+		return security.PolicyDocument{}, "", err
+	}
+	return doc, path, nil
+}
+
+func newGuardrailCommand(container *app.Container) *cobra.Command {
+	guardrailCmd := &cobra.Command{
+		Use:   "guardrail",
+		Short: "Inspect and edit guardrail policy",
+	}
+
+	showCmd := &cobra.Command{
+		Use:   "show",
+		Short: "Display guardrail policy document",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGuardrailShow(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+
+	validateCmd := &cobra.Command{
+		Use:   "validate",
+		Short: "Validate guardrail file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGuardrailValidate(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+
+	whitelistCmd := &cobra.Command{
+		Use:   "whitelist",
+		Short: "Manage guardrail whitelist",
+	}
+	addWhitelist := &cobra.Command{
+		Use:   "add <command>",
+		Short: "Add command to whitelist",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGuardrailWhitelistAdd(cmd.Context(), container, args[0])
+		},
+	}
+	removeWhitelist := &cobra.Command{
+		Use:   "remove <command>",
+		Short: "Remove command from whitelist",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGuardrailWhitelistRemove(cmd.Context(), container, args[0])
+		},
+	}
+	listWhitelist := &cobra.Command{
+		Use:   "list",
+		Short: "List whitelisted commands",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGuardrailWhitelistList(cmd.Context(), cmd.OutOrStdout(), container)
+		},
+	}
+	whitelistCmd.AddCommand(addWhitelist, removeWhitelist, listWhitelist)
+
+	confirmCmd := &cobra.Command{
+		Use:   "confirm set <level>",
+		Short: "Set confirmation action/message for a risk level",
+		Args:  cobra.ExactArgs(1),
+	}
+	var confAction, confMessage string
+	confirmCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if confAction == "" {
+			return fmt.Errorf("--action is required")
+		}
+		return runGuardrailConfirmSet(cmd.Context(), container, args[0], confAction, confMessage)
+	}
+	confirmCmd.Flags().StringVar(&confAction, "action", "", "Action (allow/preview_only/simple_confirm/confirm/explicit_confirm/block)")
+	confirmCmd.Flags().StringVar(&confMessage, "message", "", "Confirmation message")
+
+	var previewMax int
+	previewCmd := &cobra.Command{
+		Use:   "preview set",
+		Short: "Set preview max files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGuardrailPreviewSet(cmd.Context(), container, previewMax)
+		},
+	}
+	previewCmd.Flags().IntVar(&previewMax, "max-files", 10, "Maximum files to preview")
+
+	guardrailCmd.AddCommand(showCmd, validateCmd, whitelistCmd, confirmCmd, previewCmd)
+	return guardrailCmd
 }
 
 func newModelsCommand(container *app.Container) *cobra.Command {

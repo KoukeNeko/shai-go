@@ -27,6 +27,15 @@ func RenderResponse(resp domain.QueryResponse) {
 	for _, reason := range resp.RiskAssessment.Reasons {
 		fmt.Printf(" - %s\n", reason)
 	}
+	if resp.RiskAssessment.DryRunCommand != "" {
+		fmt.Printf("Dry-run suggestion: %s\n", resp.RiskAssessment.DryRunCommand)
+	}
+	if len(resp.RiskAssessment.UndoHints) > 0 {
+		fmt.Println("Undo hints:")
+		for _, hint := range resp.RiskAssessment.UndoHints {
+			fmt.Printf(" * %s\n", hint)
+		}
+	}
 
 	if resp.ExecutionResult != nil {
 		if resp.ExecutionResult.Ran {

@@ -26,13 +26,11 @@ func (p *heuristicProvider) Model() domain.ModelDefinition {
 
 func (p *heuristicProvider) Generate(_ context.Context, req ports.ProviderRequest) (ports.ProviderResponse, error) {
 	command := guessCommand(req.Prompt, req.Context)
-	resp := ports.ProviderResponse{
+	return ports.ProviderResponse{
 		Command:   command,
 		Reply:     "Heuristic provider suggestion (offline fallback)",
 		Reasoning: "Generated locally due to missing AI credentials",
-	}
-	emitStream(req, resp.Reply)
-	return resp, nil
+	}, nil
 }
 
 func guessCommand(prompt string, ctx domain.ContextSnapshot) string {
