@@ -33,18 +33,10 @@ func newInstallCommand(container *app.Container) *cobra.Command {
 		Use:   "install",
 		Short: "Install SHAI shell integration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if container.ShellIntegrator == nil {
-				return fmt.Errorf("shell installer unavailable")
-			}
-			res, err := container.ShellIntegrator.Install(shell, force)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Installed for %s\nScript: %s\nRC File: %s\n", res.Shell, res.ScriptPath, res.RCFile)
-			return nil
+			return runInstall(cmd, container, shell, force)
 		},
 	}
-	cmd.Flags().StringVar(&shell, "shell", "", "Shell to install (zsh|bash, auto-detected by default)")
+	cmd.Flags().StringVar(&shell, "shell", "", "Shell to install (zsh|bash|all, auto-detected by default)")
 	cmd.Flags().BoolVar(&force, "force", false, "Force rewrite of rc entry")
 	return cmd
 }
@@ -55,18 +47,10 @@ func newUninstallCommand(container *app.Container) *cobra.Command {
 		Use:   "uninstall",
 		Short: "Remove SHAI shell integration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if container.ShellIntegrator == nil {
-				return fmt.Errorf("shell installer unavailable")
-			}
-			res, err := container.ShellIntegrator.Uninstall(shell)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed sourcing line for %s in %s\n", res.Shell, res.RCFile)
-			return nil
+			return runUninstall(cmd, container, shell)
 		},
 	}
-	cmd.Flags().StringVar(&shell, "shell", "", "Shell to uninstall (zsh|bash, auto-detected by default)")
+	cmd.Flags().StringVar(&shell, "shell", "", "Shell to uninstall (zsh|bash|all, auto-detected by default)")
 	return cmd
 }
 
@@ -798,6 +782,103 @@ func loadGuardrailDoc(ctx context.Context, container *app.Container) (security.P
 	return doc, path, nil
 }
 
+func runInstall(cmd *cobra.Command, container *app.Container, shellFlag string, force bool) error {
+	if container.ShellIntegrator == nil {
+		return fmt.Errorf("shell installer unavailable")
+	}
+	shells, err := determineShellTargets(shellFlag, container.ShellIntegrator)
+	if err != nil {
+		return err
+	}
+	for _, sh := range shells {
+		res, err := container.ShellIntegrator.Install(string(sh), force)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Installed for %s\nScript: %s\nRC File: %s\n", res.Shell, res.ScriptPath, res.RCFile)
+		printWarnings(cmd.ErrOrStderr(), res.Warnings)
+	}
+	return nil
+}
+
+func runUninstall(cmd *cobra.Command, container *app.Container, shellFlag string) error {
+	if container.ShellIntegrator == nil {
+		return fmt.Errorf("shell installer unavailable")
+	}
+	shells, err := determineShellTargets(shellFlag, container.ShellIntegrator)
+	if err != nil {
+		return err
+	}
+	for _, sh := range shells {
+		res, err := container.ShellIntegrator.Uninstall(string(sh))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Removed sourcing line for %s in %s\n", res.Shell, res.RCFile)
+		printWarnings(cmd.ErrOrStderr(), res.Warnings)
+	}
+	return nil
+}
+
+func runReload(cmd *cobra.Command, container *app.Container, shellFlag string) error {
+	if container.ShellIntegrator == nil {
+		return fmt.Errorf("shell installer unavailable")
+	}
+	shells, err := determineShellTargets(shellFlag, container.ShellIntegrator)
+	if err != nil {
+		return err
+	}
+	for _, sh := range shells {
+		status := container.ShellIntegrator.Status(string(sh))
+		if status.Error != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "[%s] %s\n", sh, status.Error)
+			continue
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "[%s] reload by running: source %s (or open a new shell)\n", status.Shell, status.RCFile)
+		printWarnings(cmd.ErrOrStderr(), status.Warnings)
+	}
+	return nil
+}
+
+func determineShellTargets(flag string, integrator ports.ShellIntegrator) ([]domain.ShellName, error) {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case "", "auto":
+		if sh := mapShellName(integrator.DetectShell()); sh != domain.ShellUnknown {
+			return []domain.ShellName{sh}, nil
+		}
+		return []domain.ShellName{domain.ShellZsh, domain.ShellBash}, nil
+	case "all":
+		return []domain.ShellName{domain.ShellZsh, domain.ShellBash}, nil
+	default:
+		if sh := mapShellName(flag); sh != domain.ShellUnknown {
+			return []domain.ShellName{sh}, nil
+		}
+		return nil, fmt.Errorf("unsupported shell %s", flag)
+	}
+}
+
+func mapShellName(value string) domain.ShellName {
+	value = strings.ToLower(strings.TrimSpace(filepath.Base(value)))
+	switch value {
+	case "zsh":
+		return domain.ShellZsh
+	case "bash":
+		return domain.ShellBash
+	default:
+		return domain.ShellUnknown
+	}
+}
+
+func printWarnings(out io.Writer, warnings []string) {
+	for _, warning := range warnings {
+		warning = strings.TrimSpace(warning)
+		if warning == "" {
+			continue
+		}
+		fmt.Fprintf(out, "Warning: %s\n", warning)
+	}
+}
+
 type providerTemplate struct {
 	Key          string
 	Label        string
@@ -1070,6 +1151,19 @@ func newInitCommand(container *app.Container) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&providerKey, "provider", "", "Default provider (anthropic|openai|ollama)")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing config without prompting")
+	return cmd
+}
+
+func newReloadCommand(container *app.Container) *cobra.Command {
+	var shell string
+	cmd := &cobra.Command{
+		Use:   "reload",
+		Short: "Reload shell integration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReload(cmd, container, shell)
+		},
+	}
+	cmd.Flags().StringVar(&shell, "shell", "", "Shell to reload (zsh|bash|all, auto-detected by default)")
 	return cmd
 }
 

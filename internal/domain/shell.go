@@ -16,6 +16,7 @@ type ShellInstallResult struct {
 	RCFile        string
 	ScriptUpdated bool
 	RCUpdated     bool
+	Warnings      []string
 }
 
 // ShellStatus captures current integration state.
@@ -26,4 +27,5 @@ type ShellStatus struct {
 	ScriptExists bool
 	LinePresent  bool
 	Error        string
+	Warnings     []string
 }

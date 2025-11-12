@@ -52,6 +52,7 @@ func (i *Installer) Install(shell string, force bool) (domain.ShellInstallResult
 		RCFile:        rcFile,
 		ScriptUpdated: true,
 		RCUpdated:     rcUpdated,
+		Warnings:      gatherWarnings(name),
 	}, nil
 }
 
@@ -66,12 +67,16 @@ func (i *Installer) Uninstall(shell string) (domain.ShellInstallResult, error) {
 	if err != nil {
 		return domain.ShellInstallResult{}, err
 	}
+	if err := os.Remove(scriptPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return domain.ShellInstallResult{}, err
+	}
 	return domain.ShellInstallResult{
 		Shell:         name,
 		ScriptPath:    scriptPath,
 		RCFile:        rcFile,
 		ScriptUpdated: false,
 		RCUpdated:     updated,
+		Warnings:      gatherWarnings(name),
 	}, nil
 }
 
@@ -98,6 +103,7 @@ func (i *Installer) Status(shell string) domain.ShellStatus {
 		status.LinePresent = strings.Contains(string(contents), line)
 	}
 
+	status.Warnings = gatherWarnings(name)
 	return status
 }
 
@@ -224,6 +230,24 @@ func userHome() string {
 		return home
 	}
 	return "."
+}
+
+func gatherWarnings(shell domain.ShellName) []string {
+	var warnings []string
+	switch shell {
+	case domain.ShellZsh:
+		if strings.Contains(strings.ToLower(os.Getenv("ZSH")), "oh-my-zsh") {
+			warnings = append(warnings, "oh-my-zsh detected; ensure SHAI loads after your framework plugins.")
+		}
+		if os.Getenv("ZPREZTODIR") != "" {
+			warnings = append(warnings, "prezto detected; place the SHAI sourcing line at the end of your rc file.")
+		}
+	case domain.ShellBash:
+		if strings.Contains(os.Getenv("PROMPT_COMMAND"), "_shai_prompt_command") {
+			warnings = append(warnings, "Existing PROMPT_COMMAND references SHAI; reload may not be necessary.")
+		}
+	}
+	return warnings
 }
 
 var _ ports.ShellIntegrator = (*Installer)(nil)
