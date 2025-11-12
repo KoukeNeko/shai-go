@@ -25,6 +25,7 @@ import (
 	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
 	"github.com/doeshing/shai-go/internal/infrastructure/security"
 	"github.com/doeshing/shai-go/internal/ports"
+	"github.com/doeshing/shai-go/internal/version"
 )
 
 func newInstallCommand(container *app.Container) *cobra.Command {
@@ -1272,6 +1273,30 @@ func deriveUndoHints(records []domain.HistoryRecord) []string {
 	return list
 }
 
+func runVersion(out io.Writer) error {
+	fmt.Fprintf(out, "SHAI version %s\n", version.Version)
+	if version.Commit != "" {
+		fmt.Fprintf(out, "Commit: %s\n", version.Commit)
+	}
+	if version.BuildDate != "" {
+		fmt.Fprintf(out, "Built: %s\n", version.BuildDate)
+	}
+	fmt.Fprintf(out, "Go version: %s\n", runtime.Version())
+	return nil
+}
+
+func runUpdate(out io.Writer, channel string) error {
+	fmt.Fprintf(out, "Current version: %s\n", version.Version)
+	fmt.Fprintf(out, "Release channel: %s\n", channel)
+	fmt.Fprintln(out, "Update instructions:")
+	fmt.Fprintln(out, "  1. Visit https://github.com/doeshing/shai-go/releases for the latest binary.")
+	fmt.Fprintln(out, "  2. Or run the install script: curl -sSL https://shai.dev/install.sh | bash")
+	fmt.Fprintln(out, "  3. Homebrew: brew tap doeshing/shai && brew install shai")
+	fmt.Fprintln(out, "  4. Debian/Ubuntu: sudo apt install shai (coming soon)")
+	fmt.Fprintln(out, "After updating, run 'shai reload' to refresh shell integrations.")
+	return nil
+}
+
 func newGuardrailCommand(container *app.Container) *cobra.Command {
 	guardrailCmd := &cobra.Command{
 		Use:   "guardrail",
@@ -1377,6 +1402,29 @@ func newReloadCommand(container *app.Container) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&shell, "shell", "", "Shell to reload (zsh|bash|all, auto-detected by default)")
+	return cmd
+}
+
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Show SHAI version information",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVersion(cmd.OutOrStdout())
+		},
+	}
+}
+
+func newUpdateCommand() *cobra.Command {
+	var channel string
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Check for new releases and update instructions",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUpdate(cmd.OutOrStdout(), channel)
+		},
+	}
+	cmd.Flags().StringVar(&channel, "channel", "stable", "Release channel (stable/nightly)")
 	return cmd
 }
 

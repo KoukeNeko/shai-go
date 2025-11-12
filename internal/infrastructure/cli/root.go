@@ -53,6 +53,8 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	root.AddCommand(newGuardrailCommand(container))
 	root.AddCommand(newReloadCommand(container))
 	root.AddCommand(newInitCommand(container))
+	root.AddCommand(newVersionCommand())
+	root.AddCommand(newUpdateCommand())
 	return root, nil
 }
 
