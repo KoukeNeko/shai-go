@@ -43,6 +43,10 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	}
 
 	root.AddCommand(queryCmd)
+	root.AddCommand(newInstallCommand(container))
+	root.AddCommand(newUninstallCommand(container))
+	root.AddCommand(newConfigCommand(container))
+	root.AddCommand(newDoctorCommand(container))
 	return root, nil
 }
 

@@ -3,18 +3,24 @@ package app
 import (
 	"context"
 
+	"github.com/doeshing/shai-go/internal/application/doctor"
 	"github.com/doeshing/shai-go/internal/application/query"
 	"github.com/doeshing/shai-go/internal/infrastructure/ai"
 	"github.com/doeshing/shai-go/internal/infrastructure/config"
 	contextcollector "github.com/doeshing/shai-go/internal/infrastructure/context"
 	"github.com/doeshing/shai-go/internal/infrastructure/executor"
 	"github.com/doeshing/shai-go/internal/infrastructure/security"
+	"github.com/doeshing/shai-go/internal/infrastructure/shell"
 	"github.com/doeshing/shai-go/internal/pkg/logger"
+	"github.com/doeshing/shai-go/internal/ports"
 )
 
 // Container wires up application services with infrastructure adapters.
 type Container struct {
-	QueryService *query.Service
+	QueryService    *query.Service
+	ConfigProvider  ports.ConfigProvider
+	ShellIntegrator ports.ShellIntegrator
+	DoctorService   *doctor.Service
 }
 
 // BuildContainer constructs the dependency graph.
@@ -25,6 +31,9 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 		return nil, err
 	}
 
+	log := logger.NewStd(verbose)
+	collector := contextcollector.NewBasicCollector()
+
 	guardrail, err := security.NewGuardrail(cfg.Security.RulesFile)
 	if err != nil {
 		guardrail, err = security.NewGuardrail("")
@@ -33,16 +42,28 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 		}
 	}
 
-	service := &query.Service{
+	shellInstaller := shell.NewInstaller(log)
+
+	queryService := &query.Service{
 		ConfigProvider:   cfgLoader,
-		ContextCollector: contextcollector.NewBasicCollector(),
+		ContextCollector: collector,
 		ProviderFactory:  ai.NewFactory(),
 		SecurityService:  guardrail,
 		Executor:         executor.NewLocalExecutor(""),
-		Logger:           logger.NewStd(verbose),
+		Logger:           log,
+	}
+
+	doctorService := &doctor.Service{
+		ConfigProvider:   cfgLoader,
+		ShellIntegrator:  shellInstaller,
+		SecurityService:  guardrail,
+		ContextCollector: collector,
 	}
 
 	return &Container{
-		QueryService: service,
+		QueryService:    queryService,
+		ConfigProvider:  cfgLoader,
+		ShellIntegrator: shellInstaller,
+		DoctorService:   doctorService,
 	}, nil
 }

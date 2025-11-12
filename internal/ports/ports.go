@@ -66,6 +66,14 @@ type Clipboard interface {
 	Enabled() bool
 }
 
+// ShellIntegrator manages shell hook installation.
+type ShellIntegrator interface {
+	Install(shell string, force bool) (domain.ShellInstallResult, error)
+	Uninstall(shell string) (domain.ShellInstallResult, error)
+	Status(shell string) domain.ShellStatus
+	DetectShell() string
+}
+
 // Logger is a minimal logging facade for application layer.
 type Logger interface {
 	Debug(msg string, fields map[string]interface{})
