@@ -47,7 +47,7 @@ func newHistoryListCommand(container *app.Container) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&limit, "limit", DefaultHistoryLimit, "Max entries to show")
+	cmd.Flags().IntVar(&limit, "limit", domain.DefaultHistoryLimit, "Max entries to show")
 	return cmd
 }
 
@@ -68,7 +68,7 @@ func newHistorySearchCommand(container *app.Container) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&query, "query", "", "Search keyword")
-	cmd.Flags().IntVar(&searchLimit, "limit", DefaultHistorySearchLimit, "Limit search results")
+	cmd.Flags().IntVar(&searchLimit, "limit", domain.DefaultHistorySearchLimit, "Limit search results")
 	return cmd
 }
 
@@ -121,7 +121,7 @@ func newHistoryRetainCommand(container *app.Container) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&retainDays, "days", DefaultHistoryRetainDays, "Days to retain history")
+	cmd.Flags().IntVar(&retainDays, "days", domain.DefaultHistoryRetainDays, "Days to retain history")
 	return cmd
 }
 
@@ -139,7 +139,7 @@ func listHistoryEntries(out io.Writer, container *app.Container, limit int) erro
 
 	for _, rec := range records {
 		fmt.Fprintf(out, "%s | %s | %s | %s\n",
-			rec.Timestamp.Format(TimestampFormat),
+			rec.Timestamp.Format(domain.TimestampFormat),
 			rec.Model,
 			rec.RiskLevel,
 			rec.Command)
@@ -162,7 +162,7 @@ func searchHistoryEntries(out io.Writer, container *app.Container, query string,
 
 	for _, rec := range records {
 		fmt.Fprintf(out, "%s | %s\n",
-			rec.Timestamp.Format(TimestampFormat),
+			rec.Timestamp.Format(domain.TimestampFormat),
 			rec.Command)
 	}
 
@@ -203,7 +203,7 @@ func showHistoryStats(ctx context.Context, out io.Writer, container *app.Contain
 		return fmt.Errorf("history store unavailable")
 	}
 
-	records, err := store.Records(MaxHistoryAnalysisRecords, "")
+	records, err := store.Records(domain.MaxHistoryAnalysisRecords, "")
 	if err != nil {
 		return fmt.Errorf("failed to retrieve history for analysis: %w", err)
 	}

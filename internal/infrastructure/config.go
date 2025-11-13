@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
@@ -34,7 +35,7 @@ func NewFileLoader(path string) *FileLoader {
 func (l *FileLoader) Load(context.Context) (domain.Config, error) {
 	path := l.resolvePath()
 	if err := ensureConfigDir(path); err != nil {
-		return domain.Config{}, err
+		return domain.Config{}, fmt.Errorf("ensure config dir: %w", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -64,12 +65,12 @@ func (l *FileLoader) resolvePath() string {
 	if custom := os.Getenv("SHAI_CONFIG"); custom != "" {
 		return expandPath(custom)
 	}
-	return filepath.Join(configUserHome(), ".shai", "config.yaml")
+	return filepath.Join(filesystem.UserHomeDir(), ".shai", "config.yaml")
 }
 
 func ensureConfigDir(path string) error {
 	dir := filepath.Dir(path)
-	return os.MkdirAll(dir, 0o755)
+	return os.MkdirAll(dir, domain.DirectoryPermissions)
 }
 
 func writeDefault(path string, cfg domain.Config) error {
@@ -77,7 +78,7 @@ func writeDefault(path string, cfg domain.Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o600)
+	return os.WriteFile(path, raw, domain.SecureFilePermissions)
 }
 
 // Path returns the resolved config file path.
@@ -94,7 +95,7 @@ func (l *FileLoader) Save(cfg domain.Config) error {
 	if err := ensureConfigDir(l.resolvePath()); err != nil {
 		return err
 	}
-	return os.WriteFile(l.resolvePath(), raw, 0o600)
+	return os.WriteFile(l.resolvePath(), raw, domain.SecureFilePermissions)
 }
 
 // Reset overwrites the config with defaults and returns the default snapshot.
@@ -117,7 +118,7 @@ func (l *FileLoader) Backup() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(backup, data, 0o600); err != nil {
+	if err := os.WriteFile(backup, data, domain.SecureFilePermissions); err != nil {
 		return "", err
 	}
 	return backup, nil
@@ -150,7 +151,7 @@ func defaultConfig() domain.Config {
 
 	// Expand user home directory in security rules file path
 	if cfg.Security.RulesFile == "~/.shai/guardrail.yaml" {
-		cfg.Security.RulesFile = filepath.Join(configUserHome(), ".shai", "guardrail.yaml")
+		cfg.Security.RulesFile = filepath.Join(filesystem.UserHomeDir(), ".shai", "guardrail.yaml")
 	}
 
 	return cfg
@@ -233,16 +234,9 @@ func expandPath(path string) string {
 		return path
 	}
 	if len(path) > 1 && path[:2] == "~/" {
-		return filepath.Join(configUserHome(), path[2:])
+		return filepath.Join(filesystem.UserHomeDir(), path[2:])
 	}
 	return filepath.Clean(path)
-}
-
-func configUserHome() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return home
-	}
-	return "."
 }
 
 var _ ports.ConfigProvider = (*FileLoader)(nil)

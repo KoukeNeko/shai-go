@@ -62,8 +62,6 @@ func (e *LocalExecutor) Execute(ctx context.Context, command string, previewOnly
 	}
 	result.ExitCode = 0
 	return result, nil
-	result.ExitCode = 0
-	return result, nil
 }
 
 var _ ports.CommandExecutor = (*LocalExecutor)(nil)

@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
@@ -26,7 +27,7 @@ type FileStore struct {
 // NewFileStore creates a new history store under ~/.shai/history/history.jsonl.
 func NewFileStore() *FileStore {
 	return &FileStore{
-		path: filepath.Join(userHome(), ".shai", "history", "history.jsonl"),
+		path: filepath.Join(filesystem.UserHomeDir(), ".shai", "history", "history.jsonl"),
 	}
 }
 
@@ -143,8 +144,8 @@ type SQLiteStore struct {
 
 // NewSQLiteStore creates (or opens) the ~/.shai/history/history.db database.
 func NewSQLiteStore(retentionDays int) *SQLiteStore {
-	path := filepath.Join(userHome(), ".shai", "history", "history.db")
-	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	path := filepath.Join(filesystem.UserHomeDir(), ".shai", "history", "history.db")
+	_ = os.MkdirAll(filepath.Dir(path), domain.DirectoryPermissions)
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return &SQLiteStore{path: path, retentionDays: retentionDays}
@@ -310,11 +311,4 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-func userHome() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return home
-	}
-	return "."
 }

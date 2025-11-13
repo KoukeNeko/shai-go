@@ -143,7 +143,7 @@ func newGuardrailPreviewCommand(container *app.Container) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&previewMax, "max-files", DefaultPreviewMaxFiles, "Maximum files to preview")
+	cmd.Flags().IntVar(&previewMax, "max-files", domain.DefaultPreviewMaxFiles, "Maximum files to preview")
 
 	return cmd
 }
@@ -286,8 +286,8 @@ func setConfirmationLevel(ctx context.Context, container *app.Container, level s
 
 // setPreviewMaxFiles sets the maximum number of files for preview
 func setPreviewMaxFiles(ctx context.Context, container *app.Container, maxFiles int) error {
-	if maxFiles < MinPreviewMaxFiles {
-		return fmt.Errorf("max-files must be >= %d", MinPreviewMaxFiles)
+	if maxFiles < domain.MinPreviewMaxFiles {
+		return fmt.Errorf("max-files must be >= %d", domain.MinPreviewMaxFiles)
 	}
 
 	doc, path, err := loadGuardrailDocument(ctx, container)

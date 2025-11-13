@@ -19,14 +19,13 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
 const (
-	httpClientTimeout = 60 * time.Second
+	httpClientTimeout = domain.DefaultHTTPClientTimeout
 	providerName      = "http"
 )
 

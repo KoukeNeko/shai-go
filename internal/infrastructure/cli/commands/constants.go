@@ -1,37 +1,15 @@
 package commands
 
-import "time"
-
-// Command execution constants
+// CLI-specific constants
 const (
-	DefaultHistoryLimit       = 20
-	DefaultHistorySearchLimit = 50
-	DefaultHistoryRetainDays  = 30
-	MaxHistoryAnalysisRecords = 1000
-)
-
-// Model configuration constants
-const (
-	DefaultMaxTokens        = 1024
-	DefaultModelTestTimeout = 30 * time.Second
-	DefaultEditorCommand    = "vi"
-)
-
-// Cache configuration constants
-const (
-	DefaultPreviewMaxFiles = 10
-	MinPreviewMaxFiles     = 1
+	// DefaultEditorCommand is the default editor command
+	DefaultEditorCommand = "vi"
 )
 
 // Shell integration constants
 const (
 	ShellAutoDetect = "auto"
 	ShellAll        = "all"
-)
-
-// Time formats
-const (
-	TimestampFormat = time.RFC3339
 )
 
 // Error messages

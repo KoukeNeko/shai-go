@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
@@ -46,11 +47,11 @@ func NewGuardrail(path string) (*Guardrail, error) {
 		return nil, err
 	}
 
-	var compiled []compiledPattern
+	compiled := make([]compiledPattern, 0, len(doc.Rules.DangerPatterns))
 	for _, pattern := range doc.Rules.DangerPatterns {
 		re, err := regexp.Compile(pattern.Pattern)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("compile pattern %s: %w", pattern.Pattern, err)
 		}
 		compiled = append(compiled, compiledPattern{
 			re:   re,
@@ -60,7 +61,7 @@ func NewGuardrail(path string) (*Guardrail, error) {
 
 	previewLimit := doc.Rules.Preview.MaxFiles
 	if previewLimit == 0 {
-		previewLimit = 10
+		previewLimit = domain.DefaultPreviewMaxFiles
 	}
 
 	confirmation := map[domain.RiskLevel]domain.ConfirmationLevel{}
@@ -208,15 +209,15 @@ func moreSevere(next domain.RiskLevel, current domain.RiskLevel) bool {
 
 func securityExpandPath(path string) string {
 	if path == "" {
-		return filepath.Join(securityUserHome(), ".shai", "guardrail.yaml")
+		return filepath.Join(filesystem.UserHomeDir(), ".shai", "guardrail.yaml")
 	}
 	if filepath.IsAbs(path) {
 		return path
 	}
 	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(securityUserHome(), path[2:])
+		return filepath.Join(filesystem.UserHomeDir(), path[2:])
 	}
-	return filepath.Join(securityUserHome(), path)
+	return filepath.Join(filesystem.UserHomeDir(), path)
 }
 
 func defaultPatterns() []domain.DangerPattern {
@@ -386,13 +387,6 @@ func undoHintsForCommand(command string) []string {
 		hints = append(hints, "Restore from backups or use `git checkout -- <path>` if the file was tracked.")
 	}
 	return hints
-}
-
-func securityUserHome() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return home
-	}
-	return "."
 }
 
 var _ ports.SecurityService = (*Guardrail)(nil)

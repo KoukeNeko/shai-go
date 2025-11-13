@@ -9,6 +9,7 @@ import (
 
 	rootassets "github.com/doeshing/shai-go/assets"
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
@@ -138,7 +139,7 @@ func scriptFor(shell domain.ShellName) (string, error) {
 }
 
 func scriptPaths(shell domain.ShellName) (string, string) {
-	home := shellUserHome()
+	home := filesystem.UserHomeDir()
 	switch shell {
 	case domain.ShellZsh:
 		return filepath.Join(home, ".shai", "shell", "zsh.sh"), filepath.Join(home, ".zshrc")
@@ -212,7 +213,7 @@ func sourceLine(scriptPath string) string {
 }
 
 func friendlyPath(path string) string {
-	home := shellUserHome()
+	home := filesystem.UserHomeDir()
 	if strings.HasPrefix(path, home) {
 		rel := strings.TrimPrefix(path, home)
 		rel = strings.TrimPrefix(rel, string(os.PathSeparator))
@@ -223,13 +224,6 @@ func friendlyPath(path string) string {
 
 func headerComment() string {
 	return "# Added by SHAI installer\n"
-}
-
-func shellUserHome() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return home
-	}
-	return "."
 }
 
 func gatherWarnings(shell domain.ShellName) []string {

@@ -114,7 +114,7 @@ func listCacheEntries(out io.Writer, container *app.Container) error {
 		fmt.Fprintf(out, "%s | %s | %s\n",
 			entry.Key,
 			entry.Model,
-			entry.CreatedAt.Format(TimestampFormat))
+			entry.CreatedAt.Format(domain.TimestampFormat))
 	}
 
 	return nil

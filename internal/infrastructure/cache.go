@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
@@ -22,11 +23,11 @@ type FileCache struct {
 
 // NewFileCache returns a cache rooted under ~/.shai/cache/responses.
 func NewFileCache(settings domain.CacheSettings) *FileCache {
-	dir := filepath.Join(cacheUserHome(), ".shai", "cache", "responses")
+	dir := filepath.Join(filesystem.UserHomeDir(), ".shai", "cache", "responses")
 	ttl := parseTTL(settings.TTL)
 	max := settings.MaxEntries
 	if max <= 0 {
-		max = 100
+		max = domain.DefaultMaxCacheEntries
 	}
 	return &FileCache{
 		dir:        dir,
@@ -117,13 +118,6 @@ func (c *FileCache) Entries() ([]domain.CacheEntry, error) {
 
 func (c *FileCache) pathFor(key string) string {
 	return filepath.Join(c.dir, key+".json")
-}
-
-func cacheUserHome() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return home
-	}
-	return "."
 }
 
 func (c *FileCache) evictIfNeeded() error {

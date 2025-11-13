@@ -180,7 +180,7 @@ func (s *QueryService) generateCommand(ctx context.Context, cfg domain.Config, p
 		close(results)
 	}()
 
-	var errs []error
+	errs := make([]error, 0, len(candidates))
 	var success *result
 	for res := range results {
 		if res.err == nil && success == nil {
@@ -262,7 +262,7 @@ func (s *QueryService) generateWithModel(ctx context.Context, model domain.Model
 }
 
 func (s *QueryService) buildCandidateModels(cfg domain.Config, primary domain.ModelDefinition) []domain.ModelDefinition {
-	var candidates []domain.ModelDefinition
+	candidates := make([]domain.ModelDefinition, 0, 1+len(cfg.Preferences.FallbackModels))
 	candidates = append(candidates, primary)
 	seen := map[string]bool{primary.Name: true}
 	for _, name := range cfg.Preferences.FallbackModels {
@@ -320,3 +320,6 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+// Compile-time interface compliance check
+var _ domain.QueryService = (*QueryService)(nil)

@@ -95,7 +95,7 @@ func (c *BasicCollector) detectTools() []string {
 	if time.Now().Before(c.cache.expiresAt) && len(c.cache.available) > 0 {
 		return c.cache.available
 	}
-	var available []string
+	available := make([]string, 0, len(c.toolsToCheck))
 	for _, tool := range c.toolsToCheck {
 		if _, err := exec.LookPath(tool); err == nil {
 			available = append(available, tool)
@@ -103,7 +103,7 @@ func (c *BasicCollector) detectTools() []string {
 	}
 	sort.Strings(available)
 	c.cache.available = available
-	c.cache.expiresAt = time.Now().Add(10 * time.Minute)
+	c.cache.expiresAt = time.Now().Add(domain.DefaultToolCacheDuration)
 	return available
 }
 
@@ -112,7 +112,7 @@ func listFiles(dir string, limit int) []domain.FileInfo {
 	if err != nil {
 		return nil
 	}
-	var files []domain.FileInfo
+	files := make([]domain.FileInfo, 0, limit)
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
@@ -209,7 +209,7 @@ func collectKubeInfo(ctx context.Context) *domain.KubeStatus {
 }
 
 func runCmd(ctx context.Context, dir string, name string, args ...string) string {
-	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, domain.DefaultCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, name, args...)
 	if dir != "" {
