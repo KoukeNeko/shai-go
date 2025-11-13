@@ -21,7 +21,7 @@ func TestServiceRunExecutesCommandWhenAllowed(t *testing.T) {
 		result: domain.ExecutionResult{Ran: true, Stdout: "ok"},
 	}
 
-	svc := &Service{
+	svc := &QueryService{
 		ConfigProvider:   stubConfigProvider{cfg: cfg},
 		ContextCollector: stubContextCollector{snapshot: domain.ContextSnapshot{WorkingDir: "/tmp"}},
 		ProviderFactory:  stubProviderFactory{provider: stubProvider{}},
@@ -52,7 +52,7 @@ func TestServiceRunBlocksWhenGuardrailBlocks(t *testing.T) {
 		Models:      []domain.ModelDefinition{{Name: "claude", ModelID: "claude", Endpoint: "anthropic"}},
 	}
 
-	svc := &Service{
+	svc := &QueryService{
 		ConfigProvider:   stubConfigProvider{cfg: cfg},
 		ContextCollector: stubContextCollector{snapshot: domain.ContextSnapshot{WorkingDir: "/tmp"}},
 		ProviderFactory:  stubProviderFactory{provider: stubProvider{}},

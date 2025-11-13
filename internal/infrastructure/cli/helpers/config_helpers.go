@@ -3,7 +3,6 @@ package helpers
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -114,16 +113,6 @@ func TraverseNestedMap(data interface{}, keyPath []string) (interface{}, bool) {
 	}
 }
 
-// FindModelByName searches for a model in the configuration
-func FindModelByName(cfg domain.Config, name string) (domain.ModelDefinition, bool) {
-	for _, model := range cfg.Models {
-		if model.Name == name {
-			return model, true
-		}
-	}
-	return domain.ModelDefinition{}, false
-}
-
 // LoadPromptMessagesFromFile reads and parses a YAML file containing prompt messages
 func LoadPromptMessagesFromFile(filepath string) ([]domain.PromptMessage, error) {
 	data, err := os.ReadFile(filepath)
@@ -137,43 +126,4 @@ func LoadPromptMessagesFromFile(filepath string) ([]domain.PromptMessage, error)
 	}
 
 	return prompts, nil
-}
-
-// RemoveModelFromList removes a model from the models list by name
-// Returns the updated list and the index where it was found (-1 if not found)
-func RemoveModelFromList(models []domain.ModelDefinition, name string) ([]domain.ModelDefinition, int) {
-	for i, model := range models {
-		if model.Name == name {
-			return append(models[:i], models[i+1:]...), i
-		}
-	}
-	return models, -1
-}
-
-// RemoveFromStringSlice removes all occurrences of a string from a slice
-func RemoveFromStringSlice(slice []string, value string) []string {
-	var result []string
-	for _, item := range slice {
-		if item != value {
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
-// SplitAndTrimCSV splits a comma-separated string and trims whitespace
-func SplitAndTrimCSV(input string) []string {
-	if input == "" {
-		return nil
-	}
-
-	parts := strings.Split(input, ",")
-	var result []string
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
 }
