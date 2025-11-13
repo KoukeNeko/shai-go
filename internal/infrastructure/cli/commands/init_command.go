@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -20,98 +19,62 @@ const (
 	msgInitCancelled = "Init cancelled."
 )
 
-// providerTemplate defines a template for AI provider configuration
-type providerTemplate struct {
-	Key          string
-	Label        string
-	Model        domain.ModelDefinition
-	Instructions string
-}
-
-// providerOptions lists available provider templates
-var providerOptions = []providerTemplate{
-	{
-		Key:   ProviderKeyAnthropic,
-		Label: "Anthropic Claude (claude-sonnet-4)",
-		Model: domain.ModelDefinition{
-			Name:       "claude-sonnet-4",
-			Endpoint:   "https://api.anthropic.com/v1/messages",
-			ModelID:    "claude-3-5-sonnet-20240620",
-			AuthEnvVar: "ANTHROPIC_API_KEY",
-			MaxTokens:  DefaultMaxTokens,
-			Prompt:     configinfra.DefaultConfig().Models[0].Prompt,
-		},
-		Instructions: "Set ANTHROPIC_API_KEY in your environment.",
-	},
-	{
-		Key:   ProviderKeyOpenAI,
-		Label: "OpenAI GPT-4o",
-		Model: domain.ModelDefinition{
-			Name:       "gpt-4o",
-			Endpoint:   "https://api.openai.com/v1/chat/completions",
-			ModelID:    "gpt-4o-mini",
-			AuthEnvVar: "OPENAI_API_KEY",
-			OrgEnvVar:  "OPENAI_ORG_ID",
-			MaxTokens:  800,
-		},
-		Instructions: "Set OPENAI_API_KEY (and OPENAI_ORG_ID if required).",
-	},
-	{
-		Key:   ProviderKeyOllama,
-		Label: "Ollama (local codellama)",
-		Model: domain.ModelDefinition{
-			Name:      "codellama",
-			Endpoint:  "http://localhost:11434/v1/chat/completions",
-			ModelID:   "codellama:7b",
-			MaxTokens: 512,
-		},
-		Instructions: "Ensure Ollama is running locally (`ollama run codellama`).",
-	},
-}
-
-// NewInitCommand creates the init command
+// NewInitCommand creates the init command to initialize SHAI configuration.
+// This command creates a default configuration file with sensible defaults.
+// Users can then edit ~/.shai/config.yaml to add their preferred AI models.
 func NewInitCommand(container *app.Container) *cobra.Command {
-	var providerKey string
 	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Interactive configuration wizard",
+		Short: "Initialize SHAI configuration",
+		Long: `Initialize SHAI configuration with default settings.
+
+This command creates ~/.shai/config.yaml with sensible defaults.
+After initialization, you should:
+  1. Edit ~/.shai/config.yaml to configure your AI models
+  2. Set required API keys (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY)
+  3. Run 'shai doctor' to verify your setup
+
+Example configuration:
+  models:
+    - name: claude-sonnet-4
+      endpoint: https://api.anthropic.com/v1/messages
+      model_id: claude-sonnet-4-20250514
+      auth_env_var: ANTHROPIC_API_KEY
+      max_tokens: 1024
+`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInitWizard(cmd, container, providerKey, force)
+			return runInitWizard(cmd, container, force)
 		},
 	}
 
-	cmd.Flags().StringVar(&providerKey, "provider", "", "Default provider (anthropic|openai|ollama)")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing config without prompting")
 
 	return cmd
 }
 
-// runInitWizard runs the interactive configuration wizard
-func runInitWizard(cmd *cobra.Command, container *app.Container, providerKey string, force bool) error {
+// runInitWizard runs the configuration initialization wizard
+func runInitWizard(cmd *cobra.Command, container *app.Container, force bool) error {
 	loader, err := helpers.GetConfigLoader(container)
 	if err != nil {
 		return err
 	}
 
+	configPath := loader.Path()
+
 	// Check if config exists and handle overwrite confirmation
-	if !shouldProceedWithInit(cmd, loader.Path(), force) {
+	if !shouldProceedWithInit(cmd, configPath, force) {
 		fmt.Fprintln(cmd.OutOrStdout(), msgInitCancelled)
 		return nil
 	}
 
-	// Select provider
-	reader := bufio.NewReader(cmd.InOrStdin())
-	selectedProvider, err := selectProvider(cmd.OutOrStdout(), reader, providerKey)
-	if err != nil {
-		return err
-	}
+	// Build configuration with defaults
+	cfg := configinfra.DefaultConfig()
 
-	// Build configuration
-	cfg := buildInitialConfiguration(selectedProvider)
+	// Prompt for user preferences (optional interactive mode)
+	reader := bufio.NewReader(cmd.InOrStdin())
 	cfg = promptForUserPreferences(cmd, reader, cfg)
-	cfg = promptForFallbackModels(cmd, reader, cfg)
 
 	// Validate configuration
 	if err := configapp.Validate(cfg); err != nil {
@@ -129,7 +92,7 @@ func runInitWizard(cmd *cobra.Command, container *app.Container, providerKey str
 	}
 
 	// Display completion instructions
-	displayCompletionInstructions(cmd.OutOrStdout(), loader.Path(), selectedProvider)
+	displayCompletionInstructions(cmd.OutOrStdout(), configPath)
 
 	return nil
 }
@@ -150,54 +113,11 @@ func shouldProceedWithInit(cmd *cobra.Command, configPath string, force bool) bo
 	return helpers.PromptForYesNo(cmd.OutOrStdout(), reader, question, false)
 }
 
-// selectProvider selects an AI provider either by key or interactively
-func selectProvider(out io.Writer, reader *bufio.Reader, key string) (providerTemplate, error) {
-	// If key is provided, find matching provider
-	if key != "" {
-		normalizedKey := strings.ToLower(key)
-		for _, option := range providerOptions {
-			if option.Key == normalizedKey {
-				return option, nil
-			}
-		}
-		return providerTemplate{}, fmt.Errorf("unknown provider %s", key)
-	}
-
-	// Interactive selection
-	return selectProviderInteractively(out, reader)
-}
-
-// selectProviderInteractively prompts the user to select a provider
-func selectProviderInteractively(out io.Writer, reader *bufio.Reader) (providerTemplate, error) {
-	fmt.Fprintln(out, "Select a provider:")
-	for i, option := range providerOptions {
-		fmt.Fprintf(out, "  %d) %s\n", i+1, option.Label)
-	}
-
-	choice := helpers.PromptForString(out, reader, "Choice [1]:", "1")
-
-	index := DefaultProviderChoice
-	fmt.Sscanf(choice, "%d", &index)
-
-	if index < MinProviderChoice || index > len(providerOptions) {
-		return providerOptions[0], nil // Default to first provider
-	}
-
-	return providerOptions[index-1], nil
-}
-
-// buildInitialConfiguration creates initial configuration from selected provider
-func buildInitialConfiguration(provider providerTemplate) domain.Config {
-	cfg := configinfra.DefaultConfig()
-	cfg.Models = []domain.ModelDefinition{provider.Model}
-	cfg.Preferences.DefaultModel = provider.Model.Name
-	cfg.Preferences.FallbackModels = nil
-	return cfg
-}
-
 // promptForUserPreferences prompts for user preferences and updates config
 func promptForUserPreferences(cmd *cobra.Command, reader *bufio.Reader, cfg domain.Config) domain.Config {
 	out := cmd.OutOrStdout()
+
+	fmt.Fprintln(out, "\nConfiguration preferences:")
 
 	// Context settings
 	cfg.Context.IncludeGit = helpers.PromptForChoice(out, reader,
@@ -223,53 +143,36 @@ func promptForUserPreferences(cmd *cobra.Command, reader *bufio.Reader, cfg doma
 	return cfg
 }
 
-// promptForFallbackModels prompts for fallback models
-func promptForFallbackModels(cmd *cobra.Command, reader *bufio.Reader, cfg domain.Config) domain.Config {
-	fallbackInput := helpers.PromptForString(cmd.OutOrStdout(), reader,
-		"Fallback models (comma separated, optional):", "")
-
-	if fallbackInput == "" {
-		return cfg
-	}
-
-	fallbackNames := helpers.SplitAndTrimCSV(fallbackInput)
-	for _, name := range fallbackNames {
-		if name != "" && name != cfg.Preferences.DefaultModel {
-			cfg.Preferences.FallbackModels = append(cfg.Preferences.FallbackModels, name)
-		}
-	}
-
-	return cfg
-}
-
 // backupExistingConfig creates a backup of existing config file if it exists
 func backupExistingConfig(loader *configinfra.FileLoader) error {
 	if _, err := os.Stat(loader.Path()); err != nil {
 		return nil // Config doesn't exist, no backup needed
 	}
 
-	if _, err := loader.Backup(); err != nil {
+	backupPath, err := loader.Backup()
+	if err != nil {
 		return fmt.Errorf("failed to create configuration backup: %w", err)
 	}
 
+	fmt.Printf("Existing config backed up to: %s\n", backupPath)
 	return nil
 }
 
 // displayCompletionInstructions displays instructions after successful initialization
-func displayCompletionInstructions(out io.Writer, configPath string, provider providerTemplate) {
-	fmt.Fprintf(out, "Configuration written to %s\n", configPath)
-
-	// Display environment variable instructions
-	if provider.Model.AuthEnvVar != "" {
-		fmt.Fprintf(out, "Remember to export %s\n", provider.Model.AuthEnvVar)
-	}
-
-	if provider.Model.OrgEnvVar != "" {
-		fmt.Fprintf(out, "If required, set %s as well.\n", provider.Model.OrgEnvVar)
-	}
-
-	// Display provider-specific instructions
-	if provider.Instructions != "" {
-		fmt.Fprintln(out, provider.Instructions)
-	}
+func displayCompletionInstructions(out io.Writer, configPath string) {
+	fmt.Fprintf(out, "\n✓ Configuration initialized: %s\n\n", configPath)
+	fmt.Fprintln(out, "Next steps:")
+	fmt.Fprintln(out, "  1. Edit the config file to add your AI models:")
+	fmt.Fprintf(out, "     %s\n\n", configPath)
+	fmt.Fprintln(out, "  2. Set required environment variables:")
+	fmt.Fprintln(out, "     export ANTHROPIC_API_KEY=your-key-here")
+	fmt.Fprintln(out, "     export OPENAI_API_KEY=your-key-here")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  3. Verify your setup:")
+	fmt.Fprintln(out, "     shai doctor")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  4. Test a query:")
+	fmt.Fprintln(out, "     shai query \"list files\"")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "Documentation: https://docs.shai.dev/configuration")
 }

@@ -14,8 +14,6 @@ const (
 const (
 	DefaultMaxTokens        = 1024
 	DefaultModelTestTimeout = 30 * time.Second
-	DefaultProviderChoice   = 1
-	MinProviderChoice       = 1
 	DefaultEditorCommand    = "vi"
 )
 
@@ -29,13 +27,6 @@ const (
 const (
 	ShellAutoDetect = "auto"
 	ShellAll        = "all"
-)
-
-// Provider configuration
-const (
-	ProviderKeyAnthropic = "anthropic"
-	ProviderKeyOpenAI    = "openai"
-	ProviderKeyOllama    = "ollama"
 )
 
 // Time formats
