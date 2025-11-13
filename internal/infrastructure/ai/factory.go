@@ -1,55 +1,36 @@
+// Package ai provides AI provider factory for creating provider instances.
+//
+// The factory creates generic HTTP providers configured entirely through
+// the model's APIFormat settings. No provider-specific logic is needed.
 package ai
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
+const httpClientTimeout = 60 * time.Second
+
+// Factory creates AI provider instances based on model definitions.
+// It maintains a single HTTP client shared across all providers.
 type Factory struct {
 	httpClient *http.Client
 }
 
+// NewFactory creates a new provider factory with a configured HTTP client.
 func NewFactory() *Factory {
 	return &Factory{
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{Timeout: httpClientTimeout},
 	}
 }
 
+// ForModel creates a generic HTTP provider for any model definition.
+// All provider-specific behavior is controlled through the model's APIFormat configuration.
 func (f *Factory) ForModel(model domain.ModelDefinition) (ports.Provider, error) {
-	providerKind := inferProviderKind(model.Endpoint, model.Name)
-
-	switch providerKind {
-	case domain.ProviderKindAnthropic:
-		return newHTTPProvider("anthropic", model, f.httpClient, anthropicAdapter()), nil
-	case domain.ProviderKindOpenAI:
-		return newHTTPProvider("openai", model, f.httpClient, openaiAdapter()), nil
-	case domain.ProviderKindOllama:
-		return newHTTPProvider("ollama", model, f.httpClient, ollamaAdapter()), nil
-	case domain.ProviderKindUnknown:
-		return newHeuristicProvider(model), nil
-	default:
-		return nil, fmt.Errorf("unsupported provider kind: %s", providerKind)
-	}
-}
-
-func inferProviderKind(endpoint string, name string) domain.ProviderKind {
-	nameLower := strings.ToLower(name)
-
-	switch {
-	case strings.Contains(endpoint, "anthropic.com"):
-		return domain.ProviderKindAnthropic
-	case strings.Contains(endpoint, "openai.com"):
-		return domain.ProviderKindOpenAI
-	case strings.Contains(nameLower, "ollama"), strings.Contains(endpoint, "11434"), strings.Contains(endpoint, "localhost"):
-		return domain.ProviderKindOllama
-	default:
-		return domain.ProviderKindUnknown
-	}
+	return newHTTPProvider(model, f.httpClient), nil
 }
 
 var _ ports.ProviderFactory = (*Factory)(nil)

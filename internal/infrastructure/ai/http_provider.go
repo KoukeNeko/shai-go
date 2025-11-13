@@ -1,3 +1,13 @@
+// Package ai provides a unified HTTP-based AI provider implementation.
+//
+// This package implements a single, generic HTTP provider that supports any
+// AI service through YAML configuration. Instead of hardcoding provider-specific
+// logic, all API differences are handled through the APIFormat configuration:
+//   - Request format (authentication, message structure)
+//   - Response parsing (JSON path extraction)
+//   - Provider-specific headers
+//
+// This eliminates the need for separate provider implementations and adapter patterns.
 package ai
 
 import (
@@ -13,30 +23,25 @@ import (
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
+const providerName = "http"
+
+// httpProvider is a configuration-driven HTTP-based AI provider.
+// All provider-specific behavior is controlled through the model's APIFormat configuration.
 type httpProvider struct {
-	name       string
 	model      domain.ModelDefinition
 	httpClient *http.Client
-	adapter    providerAdapter
 }
 
-type providerAdapter struct {
-	buildRequest  func(domain.ModelDefinition, []domain.PromptMessage) ([]byte, error)
-	parseResponse func([]byte) (string, error)
-	setHeaders    func(*http.Request, domain.ModelDefinition) error
-}
-
-func newHTTPProvider(name string, model domain.ModelDefinition, client *http.Client, adapter providerAdapter) ports.Provider {
+// newHTTPProvider creates a new HTTP-based AI provider.
+func newHTTPProvider(model domain.ModelDefinition, client *http.Client) ports.Provider {
 	return &httpProvider{
-		name:       name,
 		model:      model,
 		httpClient: client,
-		adapter:    adapter,
 	}
 }
 
 func (p *httpProvider) Name() string {
-	return p.name
+	return providerName
 }
 
 func (p *httpProvider) Model() domain.ModelDefinition {
@@ -46,93 +51,83 @@ func (p *httpProvider) Model() domain.ModelDefinition {
 func (p *httpProvider) Generate(ctx context.Context, req ports.ProviderRequest) (ports.ProviderResponse, error) {
 	messages, err := renderPromptMessages(p.model, req.Prompt, req.Context)
 	if err != nil {
-		return ports.ProviderResponse{}, err
+		return ports.ProviderResponse{}, fmt.Errorf("render prompt: %w", err)
 	}
 
-	requestBody, err := p.adapter.buildRequest(p.model, messages)
+	requestBody, err := p.buildRequestBody(messages)
 	if err != nil {
-		return ports.ProviderResponse{}, err
+		return ports.ProviderResponse{}, fmt.Errorf("build request: %w", err)
 	}
 
-	endpoint := p.model.Endpoint
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.model.Endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return ports.ProviderResponse{}, err
+		return ports.ProviderResponse{}, fmt.Errorf("create HTTP request: %w", err)
 	}
 
-	httpReq.Header.Set("content-type", "application/json")
-	if err := p.adapter.setHeaders(httpReq, p.model); err != nil {
-		return ports.ProviderResponse{}, err
+	httpReq.Header.Set("Content-Type", "application/json")
+	if err := p.setAuthHeaders(httpReq); err != nil {
+		return ports.ProviderResponse{}, fmt.Errorf("set auth headers: %w", err)
 	}
+	p.setExtraHeaders(httpReq)
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return ports.ProviderResponse{}, err
+		return ports.ProviderResponse{}, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return ports.ProviderResponse{}, fmt.Errorf("%s: %s", p.name, resp.Status)
+		return ports.ProviderResponse{}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
 	var responseBody bytes.Buffer
 	if _, err := responseBody.ReadFrom(resp.Body); err != nil {
-		return ports.ProviderResponse{}, err
+		return ports.ProviderResponse{}, fmt.Errorf("read response body: %w", err)
 	}
 
-	content, err := p.adapter.parseResponse(responseBody.Bytes())
+	content, err := p.parseResponse(responseBody.Bytes())
 	if err != nil {
-		return ports.ProviderResponse{}, err
+		return ports.ProviderResponse{}, fmt.Errorf("parse response: %w", err)
 	}
 
 	command := extractCommand(content)
 	return ports.ProviderResponse{
 		Command:   command,
 		Reply:     content,
-		Reasoning: fmt.Sprintf("Generated via %s", p.name),
+		Reasoning: fmt.Sprintf("Generated via %s (%s)", p.model.Name, p.model.ModelID),
 	}, nil
 }
 
-func anthropicAdapter() providerAdapter {
-	return providerAdapter{
-		buildRequest:  buildAnthropicRequest,
-		parseResponse: parseAnthropicResponse,
-		setHeaders:    setAnthropicHeaders,
-	}
-}
-
-func openaiAdapter() providerAdapter {
-	return providerAdapter{
-		buildRequest:  buildChatCompletionRequest,
-		parseResponse: parseChatCompletionResponse,
-		setHeaders:    setOpenAIHeaders,
-	}
-}
-
-func ollamaAdapter() providerAdapter {
-	return providerAdapter{
-		buildRequest:  buildChatCompletionRequest,
-		parseResponse: parseChatCompletionResponse,
-		setHeaders:    setOllamaHeaders,
-	}
-}
-
-func buildAnthropicRequest(model domain.ModelDefinition, messages []domain.PromptMessage) ([]byte, error) {
-	systemPrompt, chatMessages := splitSystemMessages(messages)
+// buildRequestBody constructs the JSON request body based on the model's APIFormat configuration.
+func (p *httpProvider) buildRequestBody(messages []domain.PromptMessage) ([]byte, error) {
+	format := p.model.APIFormat
 
 	request := map[string]interface{}{
-		"model":      defaultString(model.ModelID, "claude-3-5-sonnet-20240620"),
-		"max_tokens": defaultInt(model.MaxTokens, 1024),
-		"messages":   chatMessages,
+		"model": p.model.ModelID,
 	}
-	if systemPrompt != "" {
-		request["system"] = systemPrompt
+
+	if p.model.MaxTokens > 0 {
+		request["max_tokens"] = p.model.MaxTokens
+	}
+
+	// Handle system messages based on configuration
+	if format.IsSystemMessageSeparate() {
+		systemPrompt, chatMessages := splitSystemMessages(messages, format)
+		if systemPrompt != "" {
+			request["system"] = systemPrompt
+		}
+		request["messages"] = chatMessages
+	} else {
+		// Inline mode: all messages in the messages array
+		request["messages"] = formatMessagesInline(messages, format)
 	}
 
 	return json.Marshal(request)
 }
 
-func splitSystemMessages(messages []domain.PromptMessage) (string, []map[string]interface{}) {
+// splitSystemMessages separates system messages from chat messages for providers
+// that require system messages in a separate field (e.g., Anthropic).
+func splitSystemMessages(messages []domain.PromptMessage, format domain.APIFormat) (string, []map[string]interface{}) {
 	var systemLines []string
 	var chatMessages []map[string]interface{}
 
@@ -141,100 +136,178 @@ func splitSystemMessages(messages []domain.PromptMessage) (string, []map[string]
 			systemLines = append(systemLines, msg.Content)
 			continue
 		}
-		chatMessages = append(chatMessages, map[string]interface{}{
-			"role": msg.Role,
-			"content": []map[string]string{
-				{"type": "text", "text": msg.Content},
-			},
-		})
+		chatMessages = append(chatMessages, formatMessage(msg, format))
 	}
 
 	return strings.TrimSpace(strings.Join(systemLines, "\n")), chatMessages
 }
 
-func parseAnthropicResponse(body []byte) (string, error) {
-	var response struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", err
-	}
-
-	if len(response.Content) == 0 {
-		return "", nil
-	}
-	return response.Content[0].Text, nil
-}
-
-func setAnthropicHeaders(req *http.Request, model domain.ModelDefinition) error {
-	apiKey := getEnv(model.AuthEnvVar, "ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return fmt.Errorf("missing API key: set %s or ANTHROPIC_API_KEY", model.AuthEnvVar)
-	}
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	return nil
-}
-
-func buildChatCompletionRequest(model domain.ModelDefinition, messages []domain.PromptMessage) ([]byte, error) {
-	chatMessages := make([]map[string]string, 0, len(messages))
+// formatMessagesInline formats all messages (including system) into the messages array.
+func formatMessagesInline(messages []domain.PromptMessage, format domain.APIFormat) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(messages))
 	for _, msg := range messages {
-		chatMessages = append(chatMessages, map[string]string{
-			"role":    strings.ToLower(msg.Role),
-			"content": msg.Content,
-		})
+		result = append(result, formatMessage(msg, format))
 	}
-
-	request := map[string]interface{}{
-		"model":    model.ModelID,
-		"messages": chatMessages,
-	}
-	if model.MaxTokens > 0 {
-		request["max_tokens"] = model.MaxTokens
-	}
-
-	return json.Marshal(request)
+	return result
 }
 
-func parseChatCompletionResponse(body []byte) (string, error) {
-	var response struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
+// formatMessage formats a single message based on the content wrapper configuration.
+func formatMessage(msg domain.PromptMessage, format domain.APIFormat) map[string]interface{} {
+	message := map[string]interface{}{
+		"role": strings.ToLower(msg.Role),
 	}
 
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", err
+	if format.IsContentWrapped() {
+		// Anthropic format: wrap content in an array
+		message["content"] = []map[string]string{
+			{"type": "text", "text": msg.Content},
+		}
+	} else {
+		// Standard format: direct string content
+		message["content"] = msg.Content
 	}
 
-	if len(response.Choices) == 0 {
-		return "", nil
-	}
-	return strings.TrimSpace(response.Choices[0].Message.Content), nil
+	return message
 }
 
-func setOpenAIHeaders(req *http.Request, model domain.ModelDefinition) error {
-	apiKey := getEnv(model.AuthEnvVar, "OPENAI_API_KEY")
+// setAuthHeaders configures authentication headers based on the model's APIFormat.
+func (p *httpProvider) setAuthHeaders(req *http.Request) error {
+	format := p.model.APIFormat
+	apiKey := getAPIKey(p.model)
+
 	if apiKey == "" {
-		return fmt.Errorf("missing API key: set %s or OPENAI_API_KEY", model.AuthEnvVar)
+		return fmt.Errorf("missing API key: set %s environment variable", p.model.AuthEnvVar)
 	}
-	req.Header.Set("authorization", "Bearer "+apiKey)
 
-	if org := getEnv(model.OrgEnvVar, "OPENAI_ORG_ID"); org != "" {
-		req.Header.Set("OpenAI-Organization", org)
+	headerName := format.GetAuthHeaderName()
+	headerPrefix := format.GetAuthHeaderPrefix()
+	headerValue := headerPrefix + apiKey
+
+	req.Header.Set(headerName, headerValue)
+
+	// Handle optional organization header for OpenAI
+	if p.model.OrgEnvVar != "" {
+		if orgID := os.Getenv(p.model.OrgEnvVar); orgID != "" {
+			req.Header.Set("OpenAI-Organization", orgID)
+		}
 	}
+
 	return nil
 }
 
-func setOllamaHeaders(req *http.Request, model domain.ModelDefinition) error {
-	return nil
+// setExtraHeaders adds any additional headers defined in the APIFormat configuration.
+func (p *httpProvider) setExtraHeaders(req *http.Request) {
+	for key, value := range p.model.APIFormat.ExtraHeaders {
+		req.Header.Set(key, value)
+	}
 }
 
+// parseResponse extracts the generated text from the JSON response using the configured JSON path.
+func (p *httpProvider) parseResponse(body []byte) (string, error) {
+	var response map[string]interface{}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("unmarshal JSON: %w", err)
+	}
+
+	path := p.model.APIFormat.GetResponseJSONPath()
+	content, err := extractJSONPath(response, path)
+	if err != nil {
+		return "", fmt.Errorf("extract from path '%s': %w", path, err)
+	}
+
+	return strings.TrimSpace(content), nil
+}
+
+// extractJSONPath extracts a string value from a nested JSON structure using a simple path notation.
+// Supported paths: "field", "field.nested", "field[0]", "field[0].nested.field"
+func extractJSONPath(data map[string]interface{}, path string) (string, error) {
+	parts := parseJSONPath(path)
+	var current interface{} = data
+
+	for _, part := range parts {
+		switch part.kind {
+		case "field":
+			obj, ok := current.(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("expected object at '%s'", part.value)
+			}
+			var found bool
+			current, found = obj[part.value]
+			if !found {
+				return "", fmt.Errorf("field '%s' not found", part.value)
+			}
+
+		case "index":
+			arr, ok := current.([]interface{})
+			if !ok {
+				return "", fmt.Errorf("expected array at index %s", part.value)
+			}
+			var idx int
+			fmt.Sscanf(part.value, "%d", &idx)
+			if idx < 0 || idx >= len(arr) {
+				return "", fmt.Errorf("index %d out of bounds (len=%d)", idx, len(arr))
+			}
+			current = arr[idx]
+		}
+	}
+
+	// Final value should be a string
+	if str, ok := current.(string); ok {
+		return str, nil
+	}
+
+	return "", fmt.Errorf("final value is not a string: %T", current)
+}
+
+type pathPart struct {
+	kind  string // "field" or "index"
+	value string
+}
+
+// parseJSONPath converts "content[0].text" into structured path parts.
+// Examples:
+//   - "content[0].text" → [{field, "content"}, {index, "0"}, {field, "text"}]
+//   - "choices[0].message.content" → [{field, "choices"}, {index, "0"}, {field, "message"}, {field, "content"}]
+func parseJSONPath(path string) []pathPart {
+	var parts []pathPart
+	current := ""
+
+	for i := 0; i < len(path); i++ {
+		ch := path[i]
+		switch ch {
+		case '.':
+			if current != "" {
+				parts = append(parts, pathPart{kind: "field", value: current})
+				current = ""
+			}
+		case '[':
+			if current != "" {
+				parts = append(parts, pathPart{kind: "field", value: current})
+				current = ""
+			}
+			// Find closing ]
+			j := i + 1
+			for j < len(path) && path[j] != ']' {
+				j++
+			}
+			if j < len(path) {
+				parts = append(parts, pathPart{kind: "index", value: path[i+1 : j]})
+				i = j
+			}
+		default:
+			current += string(ch)
+		}
+	}
+
+	if current != "" {
+		parts = append(parts, pathPart{kind: "field", value: current})
+	}
+
+	return parts
+}
+
+// extractCommand attempts to extract a shell command from the AI response.
+// It tries multiple extraction strategies: code blocks, command prefix, raw text.
 func extractCommand(content string) string {
 	if code := extractCodeBlock(content); code != "" {
 		return code
@@ -245,6 +318,7 @@ func extractCommand(content string) string {
 	return strings.TrimSpace(content)
 }
 
+// extractCodeBlock finds and extracts the first markdown code block (```...```).
 func extractCodeBlock(content string) string {
 	if !strings.Contains(content, "```") {
 		return ""
@@ -259,12 +333,14 @@ func extractCodeBlock(content string) string {
 
 	block := suffix[:end]
 	lines := strings.Split(block, "\n")
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "sh") {
+	// Remove language marker (sh, bash, etc.) if present
+	if len(lines) > 0 && (strings.HasPrefix(lines[0], "sh") || strings.HasPrefix(lines[0], "bash")) {
 		lines = lines[1:]
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+// extractCommandLine looks for lines prefixed with "command:" and extracts the text after it.
 func extractCommandLine(content string) string {
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -278,28 +354,12 @@ func extractCommandLine(content string) string {
 	return ""
 }
 
-func getEnv(primary, fallback string) string {
-	if primary != "" {
-		if value := os.Getenv(primary); value != "" {
-			return value
+// getAPIKey retrieves the API key from environment variables.
+func getAPIKey(model domain.ModelDefinition) string {
+	if model.AuthEnvVar != "" {
+		if key := os.Getenv(model.AuthEnvVar); key != "" {
+			return key
 		}
 	}
-	if fallback != "" {
-		return os.Getenv(fallback)
-	}
 	return ""
-}
-
-func defaultString(value, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func defaultInt(value, fallback int) int {
-	if value == 0 {
-		return fallback
-	}
-	return value
 }

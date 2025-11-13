@@ -1,3 +1,20 @@
+// Package ai provides prompt template rendering for AI provider requests.
+//
+// This file handles the conversion of user prompts and system context into
+// structured prompt messages that can be sent to AI providers. It uses Go's
+// text/template package to support dynamic content injection.
+//
+// Template Variables Available:
+//   - {{.Prompt}}: User's input prompt with context snippet
+//   - {{.WorkingDir}}: Current working directory
+//   - {{.Shell}}: Active shell (bash, zsh, etc.)
+//   - {{.OS}}: Operating system
+//   - {{.Files}}: Comma-separated list of relevant files
+//   - {{.AvailableTools}}: Comma-separated list of available CLI tools
+//   - {{.GitStatus}}: Git repository status summary
+//   - {{.K8sContext}}: Kubernetes context name
+//   - {{.K8sNamespace}}: Kubernetes namespace
+//   - {{.Environment}}: Environment variables as key=value pairs
 package ai
 
 import (
@@ -11,6 +28,7 @@ import (
 )
 
 // renderPromptMessages expands model prompt templates with context data and ensures a user message exists.
+// If the model has no custom prompt template, it uses a sensible default system prompt.
 func renderPromptMessages(model domain.ModelDefinition, userPrompt string, ctx domain.ContextSnapshot) ([]domain.PromptMessage, error) {
 	data := buildTemplateData(userPrompt, ctx)
 	messages := model.Prompt

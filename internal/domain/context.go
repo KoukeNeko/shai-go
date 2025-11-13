@@ -1,6 +1,13 @@
+// Package domain defines core business entities and value objects for SHAI.
+//
+// This file contains environmental context structures that capture the current
+// working environment (git status, kubernetes, docker, files) to provide AI
+// with rich contextual information for generating better commands.
 package domain
 
-// ContextSnapshot holds environment data injected into prompts and logs.
+// ContextSnapshot holds environmental data collected and injected into AI prompts.
+// This snapshot provides the AI with context about the user's current environment,
+// enabling more accurate and relevant command suggestions.
 type ContextSnapshot struct {
 	WorkingDir      string
 	Shell           string

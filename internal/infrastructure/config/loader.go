@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -176,6 +177,8 @@ func hydrateDefaults(cfg domain.Config) domain.Config {
 		if len(cfg.Models[i].Prompt) == 0 {
 			cfg.Models[i].Prompt = defaultPromptMessages()
 		}
+		// Auto-configure APIFormat for known providers
+		cfg.Models[i].APIFormat = detectAndConfigureAPIFormat(cfg.Models[i])
 	}
 	if cfg.Cache.TTL == "" {
 		cfg.Cache.TTL = "1h"
@@ -187,6 +190,49 @@ func hydrateDefaults(cfg domain.Config) domain.Config {
 		cfg.History.RetentionDays = 0
 	}
 	return cfg
+}
+
+// detectAndConfigureAPIFormat automatically configures APIFormat for known providers
+// based on endpoint URL patterns. Users can override by setting api_format explicitly in YAML.
+func detectAndConfigureAPIFormat(model domain.ModelDefinition) domain.APIFormat {
+	format := model.APIFormat
+	endpoint := model.Endpoint
+
+	// If user has explicitly configured any APIFormat field, respect their choices
+	// Only fill in defaults for unconfigured providers
+	hasUserConfig := format.AuthHeaderName != "" ||
+		format.SystemMessageMode != "" ||
+		format.ContentWrapper != "" ||
+		format.ResponseJSONPath != ""
+
+	if hasUserConfig {
+		return format // User knows what they're doing
+	}
+
+	// Auto-detect and configure for known providers
+	if isAnthropicEndpoint(endpoint) {
+		return configureAnthropicFormat()
+	}
+
+	// OpenAI and Ollama use the same format (default), so no special handling needed
+	return format
+}
+
+func isAnthropicEndpoint(endpoint string) bool {
+	return strings.Contains(endpoint, "anthropic.com")
+}
+
+func configureAnthropicFormat() domain.APIFormat {
+	return domain.APIFormat{
+		AuthHeaderName:    "x-api-key",
+		AuthHeaderPrefix:  "", // No prefix for Anthropic
+		SystemMessageMode: domain.SystemMessageModeSeparate,
+		ContentWrapper:    domain.ContentWrapperAnthropic,
+		ResponseJSONPath:  domain.AnthropicResponsePath,
+		ExtraHeaders: map[string]string{
+			"anthropic-version": "2023-06-01",
+		},
+	}
 }
 
 func expandPath(path string) string {

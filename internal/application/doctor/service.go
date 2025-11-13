@@ -92,12 +92,11 @@ func shellDiagnostics(installer ports.ShellIntegrator, shell domain.ShellName) d
 
 func apiCheck(models []domain.ModelDefinition) domain.HealthCheck {
 	for _, model := range models {
-		switch detectProvider(model.Endpoint) {
-		case domain.ProviderKindAnthropic:
+		if isAnthropicEndpoint(model.Endpoint) {
 			if envMissing(model.AuthEnvVar, "ANTHROPIC_API_KEY") {
 				return warn("API keys", "ANTHROPIC_API_KEY missing")
 			}
-		case domain.ProviderKindOpenAI:
+		} else if isOpenAIEndpoint(model.Endpoint) {
 			if envMissing(model.AuthEnvVar, "OPENAI_API_KEY") {
 				return warn("API keys", "OPENAI_API_KEY missing")
 			}
@@ -117,15 +116,12 @@ func guardrailFileCheck(path string) domain.HealthCheck {
 	return ok("Guardrail file", expanded)
 }
 
-func detectProvider(endpoint string) domain.ProviderKind {
-	switch {
-	case strings.Contains(endpoint, "anthropic.com"):
-		return domain.ProviderKindAnthropic
-	case strings.Contains(endpoint, "openai.com"):
-		return domain.ProviderKindOpenAI
-	default:
-		return domain.ProviderKindUnknown
-	}
+func isAnthropicEndpoint(endpoint string) bool {
+	return strings.Contains(endpoint, "anthropic.com")
+}
+
+func isOpenAIEndpoint(endpoint string) bool {
+	return strings.Contains(endpoint, "openai.com")
 }
 
 func envMissing(primary, fallback string) bool {
