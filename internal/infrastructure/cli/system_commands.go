@@ -45,42 +45,42 @@ func displayVersionInformation(out io.Writer) error {
 }
 
 // ============================================================================
-// Update Command
+// Reload Command
 // ============================================================================
 
-const (
-	releaseChannelStable  = "stable"
-	releaseChannelNightly = "nightly"
-)
-
-// newUpdateCommand creates the update command to check for new releases.
-func newUpdateCommand() *cobra.Command {
-	var channel string
-
-	cmd := &cobra.Command{
-		Use:   "update",
-		Short: "Check for new releases and update instructions",
+// newReloadCommand creates the reload command to reload configuration.
+func newReloadCommand(container *app.Container) *cobra.Command {
+	return &cobra.Command{
+		Use:   "reload",
+		Short: "Reload configuration file",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return displayUpdateInstructions(cmd.OutOrStdout(), channel)
+			return reloadConfiguration(cmd, cmd.OutOrStdout(), container)
 		},
 	}
-
-	cmd.Flags().StringVar(&channel, "channel", releaseChannelStable, "Release channel (stable/nightly)")
-
-	return cmd
 }
 
-func displayUpdateInstructions(out io.Writer, channel string) error {
-	fmt.Fprintf(out, "Current version: %s\n", version.Version)
-	fmt.Fprintf(out, "Release channel: %s\n", channel)
-	fmt.Fprintln(out, "Update instructions:")
-	fmt.Fprintln(out, "  1. Visit https://github.com/doeshing/shai-go/releases for the latest binary.")
-	fmt.Fprintln(out, "  2. Or run the install script: curl -sSL https://shai.dev/install.sh | bash")
-	fmt.Fprintln(out, "  3. Homebrew: brew tap doeshing/shai && brew install shai")
-	fmt.Fprintln(out, "  4. Debian/Ubuntu: sudo apt install shai (coming soon)")
-	fmt.Fprintln(out, "After updating, run 'shai reload' to refresh shell integrations.")
+func reloadConfiguration(cmd *cobra.Command, out io.Writer, container *app.Container) error {
+	ctx := cmd.Context()
+
+	// Reload configuration by loading it fresh
+	cfg, err := container.ConfigProvider.Load(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reload configuration: %w", err)
+	}
+
+	fmt.Fprintln(out, "Configuration reloaded successfully.")
+	fmt.Fprintf(out, "Config version: %s\n", cfg.ConfigFormatVersion)
+	fmt.Fprintf(out, "Models configured: %d\n", len(cfg.Models))
+	fmt.Fprintf(out, "Guardrails: %s\n", formatEnabledStatus(cfg.Security.Enabled))
 
 	return nil
+}
+
+func formatEnabledStatus(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 // ============================================================================

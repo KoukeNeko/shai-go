@@ -9,7 +9,6 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
-	"github.com/doeshing/shai-go/internal/infrastructure/cli/commands"
 )
 
 // Options holds CLI-level configuration.
@@ -41,11 +40,14 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
 	}
 
 	root.AddCommand(queryCmd)
 	root.AddCommand(newHealthCommand(container))
-	root.AddCommand(commands.NewGuardrailCommand(container))
+	root.AddCommand(newReloadCommand(container))
 	root.AddCommand(newVersionCommand())
 	return root, nil
 }
