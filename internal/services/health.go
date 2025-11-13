@@ -11,8 +11,8 @@ import (
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
-// DoctorService runs environment diagnostics.
-type DoctorService struct {
+// HealthService runs environment diagnostics.
+type HealthService struct {
 	ConfigProvider   ports.ConfigProvider
 	ShellIntegrator  ports.ShellIntegrator
 	SecurityService  ports.SecurityService
@@ -20,7 +20,7 @@ type DoctorService struct {
 }
 
 // Run executes checks and returns a report.
-func (s *DoctorService) Run(ctx context.Context) (domain.HealthReport, error) {
+func (s *HealthService) Run(ctx context.Context) (domain.HealthReport, error) {
 	var checks []domain.HealthCheck
 
 	cfg, err := s.ConfigProvider.Load(ctx)

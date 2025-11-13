@@ -84,30 +84,30 @@ func displayUpdateInstructions(out io.Writer, channel string) error {
 }
 
 // ============================================================================
-// Doctor Command
+// Health Command
 // ============================================================================
 
-// newDoctorCommand creates the doctor command to diagnose environment setup.
-func newDoctorCommand(container *app.Container) *cobra.Command {
+// newHealthCommand creates the health command to diagnose environment setup.
+func newHealthCommand(container *app.Container) *cobra.Command {
 	return &cobra.Command{
-		Use:   "doctor",
-		Short: "Diagnose environment setup",
+		Use:   "health",
+		Short: "Check system health and diagnostics",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDoctorDiagnostics(cmd, cmd.OutOrStdout(), container)
+			return runHealthDiagnostics(cmd, cmd.OutOrStdout(), container)
 		},
 	}
 }
 
-func runDoctorDiagnostics(cmd *cobra.Command, out io.Writer, container *app.Container) error {
-	if container.DoctorService == nil {
-		return fmt.Errorf("doctor service unavailable")
+func runHealthDiagnostics(cmd *cobra.Command, out io.Writer, container *app.Container) error {
+	if container.HealthService == nil {
+		return fmt.Errorf("health service unavailable")
 	}
 
 	ctx := cmd.Context()
-	report, err := container.DoctorService.Run(ctx)
+	report, err := container.HealthService.Run(ctx)
 
 	// Display report even if there were errors
-	displayDoctorReport(out, report)
+	displayHealthReport(out, report)
 
 	if err != nil {
 		return fmt.Errorf("diagnostics completed with errors: %w", err)
@@ -116,7 +116,7 @@ func runDoctorDiagnostics(cmd *cobra.Command, out io.Writer, container *app.Cont
 	return nil
 }
 
-func displayDoctorReport(out io.Writer, report domain.HealthReport) {
+func displayHealthReport(out io.Writer, report domain.HealthReport) {
 	for _, check := range report.Checks {
 		fmt.Fprintf(out, "[%s] %s - %s\n",
 			strings.ToUpper(string(check.Status)),

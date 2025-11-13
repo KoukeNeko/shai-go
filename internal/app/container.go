@@ -16,7 +16,7 @@ type Container struct {
 	ConfigProvider  ports.ConfigProvider
 	ConfigLoader    *infrastructure.FileLoader
 	ShellIntegrator ports.ShellIntegrator
-	DoctorService   *services.DoctorService
+	HealthService   *services.HealthService
 	HistoryStore    ports.HistoryRepository
 	CacheStore      ports.CacheRepository
 }
@@ -55,7 +55,7 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 		CacheStore:       cacheStore,
 	}
 
-	doctorService := &services.DoctorService{
+	healthService := &services.HealthService{
 		ConfigProvider:   cfgLoader,
 		ShellIntegrator:  shellInstaller,
 		SecurityService:  guardrail,
@@ -67,7 +67,7 @@ func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
 		ConfigProvider:  cfgLoader,
 		ConfigLoader:    cfgLoader,
 		ShellIntegrator: shellInstaller,
-		DoctorService:   doctorService,
+		HealthService:   healthService,
 		HistoryStore:    historyStore,
 		CacheStore:      cacheStore,
 	}, nil

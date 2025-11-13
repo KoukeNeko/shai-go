@@ -44,18 +44,9 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	}
 
 	root.AddCommand(queryCmd)
-	root.AddCommand(commands.NewInstallCommand(container))
-	root.AddCommand(commands.NewUninstallCommand(container))
-	root.AddCommand(commands.NewConfigCommand(container))
-	root.AddCommand(newDoctorCommand(container))
-	root.AddCommand(commands.NewHistoryCommand(container))
-	root.AddCommand(commands.NewCacheCommand(container))
-	root.AddCommand(commands.NewModelsCommand(container))
+	root.AddCommand(newHealthCommand(container))
 	root.AddCommand(commands.NewGuardrailCommand(container))
-	root.AddCommand(commands.NewReloadCommand(container))
-	root.AddCommand(commands.NewInitCommand(container))
 	root.AddCommand(newVersionCommand())
-	root.AddCommand(newUpdateCommand())
 	return root, nil
 }
 
