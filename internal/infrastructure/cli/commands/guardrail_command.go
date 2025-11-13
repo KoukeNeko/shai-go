@@ -11,7 +11,7 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
-	"github.com/doeshing/shai-go/internal/infrastructure/security"
+	"github.com/doeshing/shai-go/internal/infrastructure"
 )
 
 const (
@@ -173,7 +173,7 @@ func validateGuardrailPolicy(ctx context.Context, out io.Writer, container *app.
 		return err
 	}
 
-	if _, err := security.NewGuardrail(path); err != nil {
+	if _, err := infrastructure.NewGuardrail(path); err != nil {
 		return fmt.Errorf("guardrail policy validation failed: %w", err)
 	}
 
@@ -202,7 +202,7 @@ func addToWhitelist(ctx context.Context, container *app.Container, entry string)
 
 	doc.Rules.Whitelist = append(doc.Rules.Whitelist, entry)
 
-	if err := security.SavePolicyDocument(path, doc); err != nil {
+	if err := infrastructure.SavePolicyDocument(path, doc); err != nil {
 		return fmt.Errorf("failed to save policy document: %w", err)
 	}
 
@@ -235,7 +235,7 @@ func removeFromWhitelist(ctx context.Context, container *app.Container, entry st
 
 	doc.Rules.Whitelist = filtered
 
-	if err := security.SavePolicyDocument(path, doc); err != nil {
+	if err := infrastructure.SavePolicyDocument(path, doc); err != nil {
 		return fmt.Errorf("failed to save policy document: %w", err)
 	}
 
@@ -277,7 +277,7 @@ func setConfirmationLevel(ctx context.Context, container *app.Container, level s
 		Message: message,
 	}
 
-	if err := security.SavePolicyDocument(path, doc); err != nil {
+	if err := infrastructure.SavePolicyDocument(path, doc); err != nil {
 		return fmt.Errorf("failed to save policy document: %w", err)
 	}
 
@@ -297,7 +297,7 @@ func setPreviewMaxFiles(ctx context.Context, container *app.Container, maxFiles 
 
 	doc.Rules.Preview.MaxFiles = maxFiles
 
-	if err := security.SavePolicyDocument(path, doc); err != nil {
+	if err := infrastructure.SavePolicyDocument(path, doc); err != nil {
 		return fmt.Errorf("failed to save policy document: %w", err)
 	}
 
@@ -311,19 +311,19 @@ func resolveGuardrailPath(ctx context.Context, container *app.Container) (string
 		return "", fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	return security.ResolveRulesPath(cfg.Security.RulesFile), nil
+	return infrastructure.ResolveRulesPath(cfg.Security.RulesFile), nil
 }
 
 // loadGuardrailDocument loads the guardrail policy document
-func loadGuardrailDocument(ctx context.Context, container *app.Container) (security.PolicyDocument, string, error) {
+func loadGuardrailDocument(ctx context.Context, container *app.Container) (infrastructure.PolicyDocument, string, error) {
 	path, err := resolveGuardrailPath(ctx, container)
 	if err != nil {
-		return security.PolicyDocument{}, "", err
+		return infrastructure.PolicyDocument{}, "", err
 	}
 
-	doc, err := security.LoadPolicyDocument(path)
+	doc, err := infrastructure.LoadPolicyDocument(path)
 	if err != nil {
-		return security.PolicyDocument{}, "", fmt.Errorf("failed to load policy document: %w", err)
+		return infrastructure.PolicyDocument{}, "", fmt.Errorf("failed to load policy document: %w", err)
 	}
 
 	return doc, path, nil

@@ -14,16 +14,16 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/doeshing/shai-go/internal/app"
-	configapp "github.com/doeshing/shai-go/internal/application/config"
 	"github.com/doeshing/shai-go/internal/domain"
+	configinfra "github.com/doeshing/shai-go/internal/infrastructure"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli/helpers"
-	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
+	"github.com/doeshing/shai-go/internal/services"
 )
 
 const (
-	envKeyEditor              = "EDITOR"
-	defaultEditor             = "vi"
-	msgConfigurationValid     = "Configuration valid"
+	envKeyEditor                = "EDITOR"
+	defaultEditor               = "vi"
+	msgConfigurationValid       = "Configuration valid"
 	msgNoDifferencesFromDefault = "No differences from default configuration."
 )
 
@@ -333,7 +333,7 @@ func convertMapToDomainConfig(cfgMap map[string]interface{}) (domain.Config, err
 		return domain.Config{}, fmt.Errorf("failed to unmarshal to Config: %w", err)
 	}
 
-	if err := configapp.Validate(updated); err != nil {
+	if err := services.Validate(updated); err != nil {
 		return domain.Config{}, fmt.Errorf("validation failed: %w", err)
 	}
 

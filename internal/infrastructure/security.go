@@ -1,4 +1,4 @@
-package security
+package infrastructure
 
 import (
 	"errors"
@@ -130,7 +130,7 @@ func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 
 func loadRules(path string) (PolicyDocument, error) {
 	var rules PolicyDocument
-	path = expandPath(path)
+	path = securityExpandPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		// fall back to defaults
@@ -206,17 +206,17 @@ func moreSevere(next domain.RiskLevel, current domain.RiskLevel) bool {
 	return order[next] > order[current]
 }
 
-func expandPath(path string) string {
+func securityExpandPath(path string) string {
 	if path == "" {
-		return filepath.Join(userHomeDir(), ".shai", "guardrail.yaml")
+		return filepath.Join(securityUserHome(), ".shai", "guardrail.yaml")
 	}
 	if filepath.IsAbs(path) {
 		return path
 	}
 	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(userHomeDir(), path[2:])
+		return filepath.Join(securityUserHome(), path[2:])
 	}
-	return filepath.Join(userHomeDir(), path)
+	return filepath.Join(securityUserHome(), path)
 }
 
 func defaultPatterns() []domain.DangerPattern {
@@ -388,7 +388,7 @@ func undoHintsForCommand(command string) []string {
 	return hints
 }
 
-func userHomeDir() string {
+func securityUserHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}
@@ -404,7 +404,7 @@ func LoadPolicyDocument(path string) (PolicyDocument, error) {
 
 // SavePolicyDocument writes the YAML structure to disk.
 func SavePolicyDocument(path string, doc PolicyDocument) error {
-	path = expandPath(path)
+	path = securityExpandPath(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -417,5 +417,5 @@ func SavePolicyDocument(path string, doc PolicyDocument) error {
 
 // ResolveRulesPath expands the guardrail path to an absolute location.
 func ResolveRulesPath(path string) string {
-	return expandPath(path)
+	return securityExpandPath(path)
 }

@@ -3,66 +3,59 @@ package app
 import (
 	"context"
 
-	"github.com/doeshing/shai-go/internal/application/doctor"
-	"github.com/doeshing/shai-go/internal/application/query"
+	"github.com/doeshing/shai-go/internal/infrastructure"
 	"github.com/doeshing/shai-go/internal/infrastructure/ai"
-	"github.com/doeshing/shai-go/internal/infrastructure/cache"
-	"github.com/doeshing/shai-go/internal/infrastructure/config"
-	contextcollector "github.com/doeshing/shai-go/internal/infrastructure/context"
-	"github.com/doeshing/shai-go/internal/infrastructure/executor"
-	"github.com/doeshing/shai-go/internal/infrastructure/history"
-	"github.com/doeshing/shai-go/internal/infrastructure/security"
-	"github.com/doeshing/shai-go/internal/infrastructure/shell"
 	"github.com/doeshing/shai-go/internal/pkg/logger"
 	"github.com/doeshing/shai-go/internal/ports"
+	"github.com/doeshing/shai-go/internal/services"
 )
 
 // Container wires up application services with infrastructure adapters.
 type Container struct {
-	QueryService    *query.Service
+	QueryService    *services.QueryService
 	ConfigProvider  ports.ConfigProvider
-	ConfigLoader    *config.FileLoader
+	ConfigLoader    *infrastructure.FileLoader
 	ShellIntegrator ports.ShellIntegrator
-	DoctorService   *doctor.Service
+	DoctorService   *services.DoctorService
 	HistoryStore    ports.HistoryRepository
 	CacheStore      ports.CacheRepository
 }
 
 // BuildContainer constructs the dependency graph.
 func BuildContainer(ctx context.Context, verbose bool) (*Container, error) {
-	cfgLoader := config.NewFileLoader("")
+	cfgLoader := infrastructure.NewFileLoader("")
 	cfg, err := cfgLoader.Load(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	log := logger.NewStd(verbose)
-	collector := contextcollector.NewBasicCollector()
-	historyStore := history.NewSQLiteStore(cfg.History.RetentionDays)
-	cacheStore := cache.NewFileCache(cfg.Cache)
+	collector := infrastructure.NewBasicCollector()
+	historyStore := infrastructure.NewSQLiteStore(cfg.History.RetentionDays)
+	cacheStore := infrastructure.NewFileCache(cfg.Cache)
 
-	guardrail, err := security.NewGuardrail(cfg.Security.RulesFile)
+	guardrail, err := infrastructure.NewGuardrail(cfg.Security.RulesFile)
 	if err != nil {
-		guardrail, err = security.NewGuardrail("")
+		guardrail, err = infrastructure.NewGuardrail("")
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	shellInstaller := shell.NewInstaller(log)
+	shellInstaller := infrastructure.NewInstaller(log)
 
-	queryService := &query.Service{
+	queryService := &services.QueryService{
 		ConfigProvider:   cfgLoader,
 		ContextCollector: collector,
 		ProviderFactory:  ai.NewFactory(),
 		SecurityService:  guardrail,
-		Executor:         executor.NewLocalExecutor(""),
+		Executor:         infrastructure.NewLocalExecutor(""),
 		Logger:           log,
 		HistoryStore:     historyStore,
 		CacheStore:       cacheStore,
 	}
 
-	doctorService := &doctor.Service{
+	doctorService := &services.DoctorService{
 		ConfigProvider:   cfgLoader,
 		ShellIntegrator:  shellInstaller,
 		SecurityService:  guardrail,

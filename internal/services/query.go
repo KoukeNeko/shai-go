@@ -1,4 +1,4 @@
-package query
+package services
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 )
 
 // Service orchestrates the query lifecycle end-to-end.
-type Service struct {
+type QueryService struct {
 	ConfigProvider   ports.ConfigProvider
 	ContextCollector ports.ContextCollector
 	ProviderFactory  ports.ProviderFactory
@@ -29,10 +29,10 @@ type Service struct {
 }
 
 // Run processes a single natural-language query.
-func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
+func (s *QueryService) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 	if s.ConfigProvider == nil || s.ContextCollector == nil || s.ProviderFactory == nil ||
 		s.SecurityService == nil || s.Executor == nil || s.Logger == nil {
-		return domain.QueryResponse{}, errors.New("query.Service dependencies not satisfied")
+		return domain.QueryResponse{}, errors.New("services.QueryService dependencies not satisfied")
 	}
 
 	ctx := req.Context
@@ -102,7 +102,7 @@ func (s *Service) Run(req domain.QueryRequest) (domain.QueryResponse, error) {
 	return resp, nil
 }
 
-func (s *Service) decideExecution(
+func (s *QueryService) decideExecution(
 	req domain.QueryRequest,
 	cfg domain.Config,
 	risk domain.RiskAssessment,
@@ -148,16 +148,7 @@ func pickModel(cfg domain.Config, override string) (domain.ModelDefinition, erro
 	return domain.ModelDefinition{}, fmt.Errorf("model %s not configured", name)
 }
 
-func findModel(cfg domain.Config, name string) (domain.ModelDefinition, bool) {
-	for _, model := range cfg.Models {
-		if model.Name == name {
-			return model, true
-		}
-	}
-	return domain.ModelDefinition{}, false
-}
-
-func (s *Service) generateCommand(ctx context.Context, cfg domain.Config, primary domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, string, error) {
+func (s *QueryService) generateCommand(ctx context.Context, cfg domain.Config, primary domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, string, error) {
 	candidates := s.buildCandidateModels(cfg, primary)
 	if len(candidates) == 0 {
 		return ports.ProviderResponse{}, false, "", fmt.Errorf("no providers available")
@@ -216,7 +207,7 @@ func (s *Service) generateCommand(ctx context.Context, cfg domain.Config, primar
 	return ports.ProviderResponse{}, false, "", errors.Join(errs...)
 }
 
-func (s *Service) generateWithModel(ctx context.Context, model domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, error) {
+func (s *QueryService) generateWithModel(ctx context.Context, model domain.ModelDefinition, req domain.QueryRequest, snapshot domain.ContextSnapshot) (ports.ProviderResponse, bool, error) {
 	cacheKey := ""
 	if s.CacheStore != nil {
 		cacheKey = cacheKeyFor(model, req, snapshot)
@@ -270,7 +261,7 @@ func (s *Service) generateWithModel(ctx context.Context, model domain.ModelDefin
 	return aiResp, false, nil
 }
 
-func (s *Service) buildCandidateModels(cfg domain.Config, primary domain.ModelDefinition) []domain.ModelDefinition {
+func (s *QueryService) buildCandidateModels(cfg domain.Config, primary domain.ModelDefinition) []domain.ModelDefinition {
 	var candidates []domain.ModelDefinition
 	candidates = append(candidates, primary)
 	seen := map[string]bool{primary.Name: true}
@@ -286,7 +277,7 @@ func (s *Service) buildCandidateModels(cfg domain.Config, primary domain.ModelDe
 	return candidates
 }
 
-func (s *Service) persistHistory(req domain.QueryRequest, model domain.ModelDefinition, resp domain.QueryResponse, exec *domain.ExecutionResult) {
+func (s *QueryService) persistHistory(req domain.QueryRequest, model domain.ModelDefinition, resp domain.QueryResponse, exec *domain.ExecutionResult) {
 	if s.HistoryStore == nil {
 		return
 	}

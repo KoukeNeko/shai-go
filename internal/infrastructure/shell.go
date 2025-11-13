@@ -1,4 +1,4 @@
-package shell
+package infrastructure
 
 import (
 	"errors"
@@ -138,7 +138,7 @@ func scriptFor(shell domain.ShellName) (string, error) {
 }
 
 func scriptPaths(shell domain.ShellName) (string, string) {
-	home := userHome()
+	home := shellUserHome()
 	switch shell {
 	case domain.ShellZsh:
 		return filepath.Join(home, ".shai", "shell", "zsh.sh"), filepath.Join(home, ".zshrc")
@@ -212,7 +212,7 @@ func sourceLine(scriptPath string) string {
 }
 
 func friendlyPath(path string) string {
-	home := userHome()
+	home := shellUserHome()
 	if strings.HasPrefix(path, home) {
 		rel := strings.TrimPrefix(path, home)
 		rel = strings.TrimPrefix(rel, string(os.PathSeparator))
@@ -225,7 +225,7 @@ func headerComment() string {
 	return "# Added by SHAI installer\n"
 }
 
-func userHome() string {
+func shellUserHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}

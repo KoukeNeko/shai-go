@@ -1,4 +1,4 @@
-package contextcollector
+package infrastructure
 
 import (
 	"context"

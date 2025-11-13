@@ -8,9 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/doeshing/shai-go/internal/app"
-	configapp "github.com/doeshing/shai-go/internal/application/config"
 	"github.com/doeshing/shai-go/internal/domain"
-	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
+	configinfra "github.com/doeshing/shai-go/internal/infrastructure"
+	"github.com/doeshing/shai-go/internal/services"
 )
 
 // GetConfigLoader extracts the config loader from container with error handling
@@ -28,7 +28,7 @@ func SaveConfigWithValidation(container *app.Container, cfg domain.Config) error
 		return err
 	}
 
-	if err := configapp.Validate(cfg); err != nil {
+	if err := services.Validate(cfg); err != nil {
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 

@@ -1,4 +1,4 @@
-package config
+package infrastructure
 
 import (
 	"context"
@@ -64,7 +64,7 @@ func (l *FileLoader) resolvePath() string {
 	if custom := os.Getenv("SHAI_CONFIG"); custom != "" {
 		return expandPath(custom)
 	}
-	return filepath.Join(userHomeDir(), ".shai", "config.yaml")
+	return filepath.Join(configUserHome(), ".shai", "config.yaml")
 }
 
 func ensureConfigDir(path string) error {
@@ -150,7 +150,7 @@ func defaultConfig() domain.Config {
 
 	// Expand user home directory in security rules file path
 	if cfg.Security.RulesFile == "~/.shai/guardrail.yaml" {
-		cfg.Security.RulesFile = filepath.Join(userHomeDir(), ".shai", "guardrail.yaml")
+		cfg.Security.RulesFile = filepath.Join(configUserHome(), ".shai", "guardrail.yaml")
 	}
 
 	return cfg
@@ -233,12 +233,12 @@ func expandPath(path string) string {
 		return path
 	}
 	if len(path) > 1 && path[:2] == "~/" {
-		return filepath.Join(userHomeDir(), path[2:])
+		return filepath.Join(configUserHome(), path[2:])
 	}
 	return filepath.Clean(path)
 }
 
-func userHomeDir() string {
+func configUserHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}

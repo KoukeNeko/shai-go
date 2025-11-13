@@ -9,10 +9,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/doeshing/shai-go/internal/app"
-	configapp "github.com/doeshing/shai-go/internal/application/config"
 	"github.com/doeshing/shai-go/internal/domain"
+	configinfra "github.com/doeshing/shai-go/internal/infrastructure"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli/helpers"
-	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
+	"github.com/doeshing/shai-go/internal/services"
 )
 
 const (
@@ -77,7 +77,7 @@ func runInitWizard(cmd *cobra.Command, container *app.Container, force bool) err
 	cfg = promptForUserPreferences(cmd, reader, cfg)
 
 	// Validate configuration
-	if err := configapp.Validate(cfg); err != nil {
+	if err := services.Validate(cfg); err != nil {
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 

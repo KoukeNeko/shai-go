@@ -1,4 +1,4 @@
-package cache
+package infrastructure
 
 import (
 	"encoding/json"
@@ -22,7 +22,7 @@ type FileCache struct {
 
 // NewFileCache returns a cache rooted under ~/.shai/cache/responses.
 func NewFileCache(settings domain.CacheSettings) *FileCache {
-	dir := filepath.Join(userHome(), ".shai", "cache", "responses")
+	dir := filepath.Join(cacheUserHome(), ".shai", "cache", "responses")
 	ttl := parseTTL(settings.TTL)
 	max := settings.MaxEntries
 	if max <= 0 {
@@ -119,7 +119,7 @@ func (c *FileCache) pathFor(key string) string {
 	return filepath.Join(c.dir, key+".json")
 }
 
-func userHome() string {
+func cacheUserHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}
