@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/doeshing/shai-go/internal/app"
+	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli/helpers"
 )
@@ -252,11 +253,7 @@ func calculateDirectorySize(dirPath string) (int64, error) {
 }
 
 // calculateModelCounts calculates the number of cache entries per model
-func calculateModelCounts(entries []struct {
-	Key       string
-	Model     string
-	CreatedAt time.Time
-}) map[string]int {
+func calculateModelCounts(entries []domain.CacheEntry) map[string]int {
 	counts := make(map[string]int)
 
 	for _, entry := range entries {

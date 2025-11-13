@@ -188,13 +188,3 @@ Current environment:
 	}
 }
 
-func toChatMessages(msgs []domain.PromptMessage) []chatMessage {
-	var out []chatMessage
-	for _, msg := range msgs {
-		out = append(out, chatMessage{
-			Role:    strings.ToLower(msg.Role),
-			Content: msg.Content,
-		})
-	}
-	return out
-}

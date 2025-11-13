@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -9,44 +10,42 @@ import (
 	"github.com/doeshing/shai-go/internal/ports"
 )
 
-// Factory implements ProviderFactory by detecting provider kind via endpoint.
 type Factory struct {
 	httpClient *http.Client
 }
 
-// NewFactory creates a new AI provider factory.
 func NewFactory() *Factory {
 	return &Factory{
 		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
-// ForModel returns a provider implementation for the given model definition.
 func (f *Factory) ForModel(model domain.ModelDefinition) (ports.Provider, error) {
-	switch inferProvider(model.Endpoint, model.Name) {
+	providerKind := inferProviderKind(model.Endpoint, model.Name)
+
+	switch providerKind {
 	case domain.ProviderKindAnthropic:
-		return newAnthropicProvider(model, f.httpClient), nil
+		return newHTTPProvider("anthropic", model, f.httpClient, anthropicAdapter()), nil
 	case domain.ProviderKindOpenAI:
-		return newOpenAIProvider(model, f.httpClient), nil
+		return newHTTPProvider("openai", model, f.httpClient, openaiAdapter()), nil
 	case domain.ProviderKindOllama:
-		return newOllamaProvider(model, f.httpClient), nil
-	default:
+		return newHTTPProvider("ollama", model, f.httpClient, ollamaAdapter()), nil
+	case domain.ProviderKindUnknown:
 		return newHeuristicProvider(model), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider kind: %s", providerKind)
 	}
 }
 
-func inferProvider(endpoint string, name string) domain.ProviderKind {
+func inferProviderKind(endpoint string, name string) domain.ProviderKind {
 	nameLower := strings.ToLower(name)
+
 	switch {
 	case strings.Contains(endpoint, "anthropic.com"):
 		return domain.ProviderKindAnthropic
 	case strings.Contains(endpoint, "openai.com"):
 		return domain.ProviderKindOpenAI
-	case strings.Contains(nameLower, "ollama"):
-		return domain.ProviderKindOllama
-	case strings.Contains(endpoint, "11434"):
-		return domain.ProviderKindOllama
-	case strings.Contains(endpoint, "localhost"):
+	case strings.Contains(nameLower, "ollama"), strings.Contains(endpoint, "11434"), strings.Contains(endpoint, "localhost"):
 		return domain.ProviderKindOllama
 	default:
 		return domain.ProviderKindUnknown

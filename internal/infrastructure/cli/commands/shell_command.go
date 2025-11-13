@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 
