@@ -25,7 +25,6 @@ import (
 	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
 	"github.com/doeshing/shai-go/internal/infrastructure/security"
 	"github.com/doeshing/shai-go/internal/ports"
-	"github.com/doeshing/shai-go/internal/version"
 )
 
 func newInstallCommand(container *app.Container) *cobra.Command {
@@ -56,20 +55,6 @@ func newUninstallCommand(container *app.Container) *cobra.Command {
 	return cmd
 }
 
-func newDoctorCommand(container *app.Container) *cobra.Command {
-	return &cobra.Command{
-		Use:   "doctor",
-		Short: "Diagnose environment setup",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if container.DoctorService == nil {
-				return fmt.Errorf("doctor service unavailable")
-			}
-			report, err := container.DoctorService.Run(cmd.Context())
-			renderDoctorReport(cmd.OutOrStdout(), report)
-			return err
-		},
-	}
-}
 
 func newConfigCommand(container *app.Container) *cobra.Command {
 	configCmd := &cobra.Command{
@@ -217,11 +202,6 @@ func traverseKey(data interface{}, path []string) (interface{}, bool) {
 	}
 }
 
-func renderDoctorReport(out io.Writer, report domain.HealthReport) {
-	for _, check := range report.Checks {
-		fmt.Fprintf(out, "[%s] %s - %s\n", strings.ToUpper(string(check.Status)), check.Name, check.Details)
-	}
-}
 
 func runConfigSet(ctx context.Context, container *app.Container, key, value string) error {
 	cfg, err := container.ConfigProvider.Load(ctx)
@@ -1273,29 +1253,6 @@ func deriveUndoHints(records []domain.HistoryRecord) []string {
 	return list
 }
 
-func runVersion(out io.Writer) error {
-	fmt.Fprintf(out, "SHAI version %s\n", version.Version)
-	if version.Commit != "" {
-		fmt.Fprintf(out, "Commit: %s\n", version.Commit)
-	}
-	if version.BuildDate != "" {
-		fmt.Fprintf(out, "Built: %s\n", version.BuildDate)
-	}
-	fmt.Fprintf(out, "Go version: %s\n", runtime.Version())
-	return nil
-}
-
-func runUpdate(out io.Writer, channel string) error {
-	fmt.Fprintf(out, "Current version: %s\n", version.Version)
-	fmt.Fprintf(out, "Release channel: %s\n", channel)
-	fmt.Fprintln(out, "Update instructions:")
-	fmt.Fprintln(out, "  1. Visit https://github.com/doeshing/shai-go/releases for the latest binary.")
-	fmt.Fprintln(out, "  2. Or run the install script: curl -sSL https://shai.dev/install.sh | bash")
-	fmt.Fprintln(out, "  3. Homebrew: brew tap doeshing/shai && brew install shai")
-	fmt.Fprintln(out, "  4. Debian/Ubuntu: sudo apt install shai (coming soon)")
-	fmt.Fprintln(out, "After updating, run 'shai reload' to refresh shell integrations.")
-	return nil
-}
 
 func newGuardrailCommand(container *app.Container) *cobra.Command {
 	guardrailCmd := &cobra.Command{
@@ -1405,28 +1362,6 @@ func newReloadCommand(container *app.Container) *cobra.Command {
 	return cmd
 }
 
-func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Show SHAI version information",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runVersion(cmd.OutOrStdout())
-		},
-	}
-}
-
-func newUpdateCommand() *cobra.Command {
-	var channel string
-	cmd := &cobra.Command{
-		Use:   "update",
-		Short: "Check for new releases and update instructions",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(cmd.OutOrStdout(), channel)
-		},
-	}
-	cmd.Flags().StringVar(&channel, "channel", "stable", "Release channel (stable/nightly)")
-	return cmd
-}
 
 func newModelsCommand(container *app.Container) *cobra.Command {
 	modelsCmd := &cobra.Command{
