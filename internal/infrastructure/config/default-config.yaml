@@ -1,0 +1,104 @@
+# SHAI Default Configuration
+# This file is used as a template when initializing SHAI for the first time.
+#
+# Documentation: https://docs.shai.dev/configuration
+
+config_format_version: "1"
+
+# User preferences
+preferences:
+  default_model: claude-sonnet-4
+  auto_execute_safe: false
+  preview_mode: always  # always | never
+  timeout: 30
+  fallback_models: []
+
+# AI Model Configurations
+# Add your preferred AI models here. SHAI supports any OpenAI-compatible API.
+models:
+  # Anthropic Claude
+  - name: claude-sonnet-4
+    endpoint: https://api.anthropic.com/v1/messages
+    auth_env_var: ANTHROPIC_API_KEY
+    model_id: claude-3-5-sonnet-20240620
+    max_tokens: 1024
+    prompt:
+      - role: system
+        content: |
+          You are SHAI, a cautious shell assistant.
+          Always output a single shell command (with optional short explanation).
+          Current environment:
+          - Directory: {{.WorkingDir}}
+          - Shell: {{.Shell}}
+          - OS: {{.OS}}
+          {{if .AvailableTools}}- Tools: {{.AvailableTools}}{{end}}
+          {{if .GitStatus}}- Git: {{.GitStatus}}{{end}}
+          {{if .K8sNamespace}}- Kubernetes: {{.K8sContext}}/{{.K8sNamespace}}{{end}}
+      - role: user
+        content: "{{.Prompt}}"
+
+  # Ollama (local LLM)
+  # Requires Ollama to be running locally: ollama run codellama
+  - name: codellama
+    endpoint: http://localhost:11434/v1/chat/completions
+    model_id: codellama:7b
+    max_tokens: 512
+    prompt:
+      - role: system
+        content: |
+          You are a terminal assistant. Convert the user's request into a shell command.
+          Only return the command, no explanations.
+
+          Environment: {{.Shell}} on {{.OS}}
+          Directory: {{.WorkingDir}}
+      - role: user
+        content: "{{.Prompt}}"
+
+  # Example: OpenAI GPT-4
+  # Uncomment and set OPENAI_API_KEY to use
+  # - name: gpt-4
+  #   endpoint: https://api.openai.com/v1/chat/completions
+  #   auth_env_var: OPENAI_API_KEY
+  #   org_env_var: OPENAI_ORG_ID
+  #   model_id: gpt-4-turbo
+  #   max_tokens: 1024
+  #   prompt:
+  #     - role: system
+  #       content: |
+  #         You are a terminal command assistant. Convert natural language queries into shell commands.
+  #
+  #         Current environment:
+  #         - Directory: {{.WorkingDir}}
+  #         - Shell: {{.Shell}}
+  #         - OS: {{.OS}}
+  #
+  #         Return ONLY the shell command without any explanation or markdown formatting.
+  #     - role: user
+  #       content: "{{.Prompt}}"
+
+# Context collection settings
+context:
+  include_files: true
+  max_files: 20
+  include_git: auto      # auto | always | never
+  include_k8s: auto      # auto | always | never
+  include_env: false
+
+# Security guardrails
+security:
+  enabled: true
+  rules_file: ~/.shai/guardrail.yaml
+
+# Execution settings
+execution:
+  shell: auto           # auto | bash | zsh | fish
+  confirm_before_execute: true
+
+# Response cache settings
+cache:
+  ttl: 1h
+  max_entries: 100
+
+# Command history settings
+history:
+  retention_days: 90

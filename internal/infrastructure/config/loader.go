@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,6 +16,9 @@ import (
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/ports"
 )
+
+//go:embed default-config.yaml
+var defaultConfigYAML []byte
 
 // FileLoader loads YAML configuration from ~/.shai/config.yaml (overridable via SHAI_CONFIG).
 type FileLoader struct {
@@ -120,47 +124,36 @@ func (l *FileLoader) Backup() (string, error) {
 }
 
 func defaultConfig() domain.Config {
-	return domain.Config{
-		ConfigFormatVersion: "1",
-		Preferences: domain.Preferences{
-			DefaultModel:    "claude-sonnet-4",
-			AutoExecuteSafe: false,
-			PreviewMode:     "always",
-			TimeoutSeconds:  30,
-		},
-		Context: domain.ContextSettings{
-			IncludeFiles: true,
-			MaxFiles:     20,
-			IncludeGit:   "auto",
-			IncludeK8s:   "auto",
-			IncludeEnv:   false,
-		},
-		Security: domain.SecuritySettings{
-			Enabled:   true,
-			RulesFile: filepath.Join(userHomeDir(), ".shai", "guardrail.yaml"),
-		},
-		Execution: domain.ExecutionSettings{
-			Shell:                "auto",
-			ConfirmBeforeExecute: true,
-		},
-		Cache: domain.CacheSettings{
-			TTL:        "1h",
-			MaxEntries: 100,
-		},
-		History: domain.HistorySettings{
-			RetentionDays: 90,
-		},
-		Models: []domain.ModelDefinition{
-			{
-				Name:       "claude-sonnet-4",
-				Endpoint:   "https://api.anthropic.com/v1/messages",
-				AuthEnvVar: "ANTHROPIC_API_KEY",
-				ModelID:    "claude-3-5-sonnet-20240620",
-				MaxTokens:  1024,
-				Prompt:     defaultPromptMessages(),
+	var cfg domain.Config
+	if err := yaml.Unmarshal(defaultConfigYAML, &cfg); err != nil {
+		// Fallback to minimal config if embedded YAML is corrupted
+		// This should never happen in production, but provides safety
+		return domain.Config{
+			ConfigFormatVersion: "1",
+			Preferences: domain.Preferences{
+				DefaultModel:    "claude-sonnet-4",
+				AutoExecuteSafe: false,
+				PreviewMode:     "always",
+				TimeoutSeconds:  30,
 			},
-		},
+			Models: []domain.ModelDefinition{
+				{
+					Name:       "claude-sonnet-4",
+					Endpoint:   "https://api.anthropic.com/v1/messages",
+					AuthEnvVar: "ANTHROPIC_API_KEY",
+					ModelID:    "claude-3-5-sonnet-20240620",
+					MaxTokens:  1024,
+				},
+			},
+		}
 	}
+
+	// Expand user home directory in security rules file path
+	if cfg.Security.RulesFile == "~/.shai/guardrail.yaml" {
+		cfg.Security.RulesFile = filepath.Join(userHomeDir(), ".shai", "guardrail.yaml")
+	}
+
+	return cfg
 }
 
 func hydrateDefaults(cfg domain.Config) domain.Config {
