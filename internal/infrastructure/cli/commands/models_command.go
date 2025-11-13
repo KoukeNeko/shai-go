@@ -12,7 +12,6 @@ import (
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/infrastructure/ai"
-	"github.com/doeshing/shai-go/internal/infrastructure/cli"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli/helpers"
 	"github.com/doeshing/shai-go/internal/ports"
 )
@@ -105,7 +104,7 @@ func newModelsAddCommand(container *app.Container) *cobra.Command {
 	cmd.Flags().StringVar(&authEnv, "auth-env", "", "Environment variable containing API key")
 	cmd.Flags().StringVar(&orgEnv, "org-env", "", "Environment variable containing org/project ID")
 	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "Path to YAML prompt template for this model")
-	cmd.Flags().IntVar(&maxTokens, "max-tokens", cli.DefaultMaxTokens, "Max tokens for responses")
+	cmd.Flags().IntVar(&maxTokens, "max-tokens", DefaultMaxTokens, "Max tokens for responses")
 
 	return cmd
 }
@@ -178,7 +177,7 @@ func testModel(ctx context.Context, out io.Writer, container *app.Container, mod
 		return fmt.Errorf("failed to create provider for model %s: %w", modelName, err)
 	}
 
-	testCtx, cancel := context.WithTimeout(ctx, cli.DefaultModelTestTimeout)
+	testCtx, cancel := context.WithTimeout(ctx, DefaultModelTestTimeout)
 	defer cancel()
 
 	snapshot := domain.ContextSnapshot{

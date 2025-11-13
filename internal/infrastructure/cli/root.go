@@ -9,6 +9,7 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/infrastructure/cli/commands"
 )
 
 // Options holds CLI-level configuration.
@@ -43,16 +44,16 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	}
 
 	root.AddCommand(queryCmd)
-	root.AddCommand(newInstallCommand(container))
-	root.AddCommand(newUninstallCommand(container))
-	root.AddCommand(newConfigCommand(container))
+	root.AddCommand(commands.NewInstallCommand(container))
+	root.AddCommand(commands.NewUninstallCommand(container))
+	root.AddCommand(commands.NewConfigCommand(container))
 	root.AddCommand(newDoctorCommand(container))
-	root.AddCommand(newHistoryCommand(container))
-	root.AddCommand(newCacheCommand(container))
-	root.AddCommand(newModelsCommand(container))
-	root.AddCommand(newGuardrailCommand(container))
-	root.AddCommand(newReloadCommand(container))
-	root.AddCommand(newInitCommand(container))
+	root.AddCommand(commands.NewHistoryCommand(container))
+	root.AddCommand(commands.NewCacheCommand(container))
+	root.AddCommand(commands.NewModelsCommand(container))
+	root.AddCommand(commands.NewGuardrailCommand(container))
+	root.AddCommand(commands.NewReloadCommand(container))
+	root.AddCommand(commands.NewInitCommand(container))
 	root.AddCommand(newVersionCommand())
 	root.AddCommand(newUpdateCommand())
 	return root, nil

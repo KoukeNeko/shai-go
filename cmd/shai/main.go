@@ -15,12 +15,18 @@ func main() {
 
 	root, err := cli.NewRootCmd(ctx, opts)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		_, err := fmt.Fprintln(os.Stderr, "error:", err)
+		if err != nil {
+			return
+		}
 		os.Exit(1)
 	}
 
 	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		_, err := fmt.Fprintln(os.Stderr, "error:", err)
+		if err != nil {
+			return
+		}
 		os.Exit(1)
 	}
 }

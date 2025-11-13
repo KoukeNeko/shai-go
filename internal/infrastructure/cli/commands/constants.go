@@ -1,4 +1,4 @@
-package cli
+package commands
 
 import "time"
 
@@ -12,11 +12,11 @@ const (
 
 // Model configuration constants
 const (
-	DefaultMaxTokens         = 1024
-	DefaultModelTestTimeout  = 30 * time.Second
-	DefaultProviderChoice    = 1
-	MinProviderChoice        = 1
-	DefaultEditorCommand     = "vi"
+	DefaultMaxTokens        = 1024
+	DefaultModelTestTimeout = 30 * time.Second
+	DefaultProviderChoice   = 1
+	MinProviderChoice       = 1
+	DefaultEditorCommand    = "vi"
 )
 
 // Cache configuration constants
@@ -61,10 +61,10 @@ const (
 
 // Success messages
 const (
-	MsgConfigurationValid     = "Configuration valid"
+	MsgConfigurationValid       = "Configuration valid"
 	MsgNoDifferencesFromDefault = "No differences from default configuration."
-	MsgNoHistoryRecorded      = "No history recorded yet."
-	MsgNoCachedResponses      = "No cached responses."
-	MsgWhitelistEmpty         = "Whitelist is empty."
-	MsgInitCancelled          = "Init cancelled."
+	MsgNoHistoryRecorded        = "No history recorded yet."
+	MsgNoCachedResponses        = "No cached responses."
+	MsgWhitelistEmpty           = "Whitelist is empty."
+	MsgInitCancelled            = "Init cancelled."
 )

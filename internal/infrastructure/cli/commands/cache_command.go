@@ -12,7 +12,6 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
-	"github.com/doeshing/shai-go/internal/infrastructure/cli"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli/helpers"
 )
 
@@ -115,7 +114,7 @@ func listCacheEntries(out io.Writer, container *app.Container) error {
 		fmt.Fprintf(out, "%s | %s | %s\n",
 			entry.Key,
 			entry.Model,
-			entry.CreatedAt.Format(cli.TimestampFormat))
+			entry.CreatedAt.Format(TimestampFormat))
 	}
 
 	return nil

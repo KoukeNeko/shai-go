@@ -12,7 +12,6 @@ import (
 	"github.com/doeshing/shai-go/internal/app"
 	configapp "github.com/doeshing/shai-go/internal/application/config"
 	"github.com/doeshing/shai-go/internal/domain"
-	"github.com/doeshing/shai-go/internal/infrastructure/cli"
 	"github.com/doeshing/shai-go/internal/infrastructure/cli/helpers"
 	configinfra "github.com/doeshing/shai-go/internal/infrastructure/config"
 )
@@ -32,20 +31,20 @@ type providerTemplate struct {
 // providerOptions lists available provider templates
 var providerOptions = []providerTemplate{
 	{
-		Key:   cli.ProviderKeyAnthropic,
+		Key:   ProviderKeyAnthropic,
 		Label: "Anthropic Claude (claude-sonnet-4)",
 		Model: domain.ModelDefinition{
 			Name:       "claude-sonnet-4",
 			Endpoint:   "https://api.anthropic.com/v1/messages",
 			ModelID:    "claude-3-5-sonnet-20240620",
 			AuthEnvVar: "ANTHROPIC_API_KEY",
-			MaxTokens:  cli.DefaultMaxTokens,
+			MaxTokens:  DefaultMaxTokens,
 			Prompt:     configinfra.DefaultConfig().Models[0].Prompt,
 		},
 		Instructions: "Set ANTHROPIC_API_KEY in your environment.",
 	},
 	{
-		Key:   cli.ProviderKeyOpenAI,
+		Key:   ProviderKeyOpenAI,
 		Label: "OpenAI GPT-4o",
 		Model: domain.ModelDefinition{
 			Name:       "gpt-4o",
@@ -58,7 +57,7 @@ var providerOptions = []providerTemplate{
 		Instructions: "Set OPENAI_API_KEY (and OPENAI_ORG_ID if required).",
 	},
 	{
-		Key:   cli.ProviderKeyOllama,
+		Key:   ProviderKeyOllama,
 		Label: "Ollama (local codellama)",
 		Model: domain.ModelDefinition{
 			Name:      "codellama",
@@ -177,10 +176,10 @@ func selectProviderInteractively(out io.Writer, reader *bufio.Reader) (providerT
 
 	choice := helpers.PromptForString(out, reader, "Choice [1]:", "1")
 
-	index := cli.DefaultProviderChoice
+	index := DefaultProviderChoice
 	fmt.Sscanf(choice, "%d", &index)
 
-	if index < cli.MinProviderChoice || index > len(providerOptions) {
+	if index < MinProviderChoice || index > len(providerOptions) {
 		return providerOptions[0], nil // Default to first provider
 	}
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
-	"github.com/doeshing/shai-go/internal/infrastructure/cli"
 	"github.com/doeshing/shai-go/internal/infrastructure/security"
 )
 
@@ -144,7 +143,7 @@ func newGuardrailPreviewCommand(container *app.Container) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&previewMax, "max-files", cli.DefaultPreviewMaxFiles, "Maximum files to preview")
+	cmd.Flags().IntVar(&previewMax, "max-files", DefaultPreviewMaxFiles, "Maximum files to preview")
 
 	return cmd
 }
@@ -287,8 +286,8 @@ func setConfirmationLevel(ctx context.Context, container *app.Container, level s
 
 // setPreviewMaxFiles sets the maximum number of files for preview
 func setPreviewMaxFiles(ctx context.Context, container *app.Container, maxFiles int) error {
-	if maxFiles < cli.MinPreviewMaxFiles {
-		return fmt.Errorf("max-files must be >= %d", cli.MinPreviewMaxFiles)
+	if maxFiles < MinPreviewMaxFiles {
+		return fmt.Errorf("max-files must be >= %d", MinPreviewMaxFiles)
 	}
 
 	doc, path, err := loadGuardrailDocument(ctx, container)
