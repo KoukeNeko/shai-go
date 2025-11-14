@@ -295,14 +295,24 @@ To activate: `source ~/.zshrc` or restart your terminal.
 ### Uninstalling
 
 ```bash
-# Completely removes all shell integration
+# Remove shell integration (keeps ~/.shai/ config)
 shai uninstall
 
+# Complete removal including all configuration
+shai uninstall --purge
+
 # What gets removed:
-# - Integration block from RC file
-# - Shell scripts from ~/.shai/shell/
-# - Empty directories
-# Creates backup before modification
+# Without --purge:
+#   - Integration block from RC file
+#   - Shell scripts from ~/.shai/shell/
+#   - Empty directories
+#   - Preserves config.yaml, guardrail.yaml, and other data
+#
+# With --purge:
+#   - Everything above PLUS entire ~/.shai/ directory
+#   - All configuration, guardrail rules, history, cache
+#
+# Always creates backup of RC file before modification
 ```
 
 ### Manual Installation

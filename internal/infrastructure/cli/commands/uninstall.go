@@ -18,6 +18,7 @@ import (
 // NewUninstallCommand creates the uninstall command for shell integration
 func NewUninstallCommand() *cobra.Command {
 	var shellFlag string
+	var purge bool
 
 	cmd := &cobra.Command{
 		Use:   "uninstall",
@@ -30,20 +31,25 @@ This command will:
 3. Delete shell scripts from ~/.shai/shell/
 4. Create backup of RC file before modification
 
+With --purge flag:
+- Removes entire ~/.shai/ directory including config, guardrail rules, and all data
+
 Example:
-  shai uninstall              # Auto-detect shell
-  shai uninstall --shell zsh  # Uninstall from zsh`,
+  shai uninstall              # Auto-detect shell, keep config
+  shai uninstall --shell zsh  # Uninstall from zsh
+  shai uninstall --purge      # Complete removal including ~/.shai/`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUninstall(cmd.OutOrStdout(), cmd.ErrOrStderr(), shellFlag)
+			return runUninstall(cmd.OutOrStdout(), cmd.ErrOrStderr(), shellFlag, purge)
 		},
 	}
 
 	cmd.Flags().StringVar(&shellFlag, "shell", "", "Shell type (zsh, bash). Auto-detected if not specified")
+	cmd.Flags().BoolVar(&purge, "purge", false, "Completely remove ~/.shai/ directory including all configuration")
 
 	return cmd
 }
 
-func runUninstall(out, errOut io.Writer, shellFlag string) error {
+func runUninstall(out, errOut io.Writer, shellFlag string, purge bool) error {
 	// Detect shell
 	shell, err := detectShell(shellFlag)
 	if err != nil {
@@ -53,8 +59,9 @@ func runUninstall(out, errOut io.Writer, shellFlag string) error {
 	fmt.Fprintf(out, "Uninstalling SHAI integration for %s...\n\n", shell)
 
 	// Get paths
+	shaiDir := filepath.Join(filesystem.UserHomeDir(), ".shai")
 	rcFile := getRCFile(shell)
-	shellDir := filepath.Join(filesystem.UserHomeDir(), ".shai", "shell")
+	shellDir := filepath.Join(shaiDir, "shell")
 	scriptFile := filepath.Join(shellDir, string(shell)+".sh")
 
 	// Check if RC file exists
@@ -103,7 +110,22 @@ func runUninstall(out, errOut io.Writer, shellFlag string) error {
 		}
 	}
 
+	// Purge entire ~/.shai directory if requested
+	if purge {
+		fmt.Fprintf(out, "\n⚠️  Purging entire SHAI directory...\n")
+		if err := os.RemoveAll(shaiDir); err != nil {
+			return fmt.Errorf("remove .shai directory: %w", err)
+		}
+		fmt.Fprintf(out, "✓ Removed %s (including all configuration and data)\n", shaiDir)
+	}
+
 	fmt.Fprintf(out, "\n✨ Uninstallation complete!\n\n")
+	if purge {
+		fmt.Fprintf(out, "All SHAI files have been removed.\n")
+	} else {
+		fmt.Fprintf(out, "Configuration files in ~/.shai/ have been preserved.\n")
+		fmt.Fprintf(out, "To completely remove SHAI, run: shai uninstall --purge\n\n")
+	}
 	fmt.Fprintf(out, "The changes will take effect after you:\n")
 	fmt.Fprintf(out, "  source %s\n", rcFile)
 	fmt.Fprintf(out, "Or simply restart your terminal.\n")
