@@ -205,6 +205,11 @@ func formatMessage(msg domain.PromptMessage, format domain.APIFormat) map[string
 
 // setAuthHeaders configures authentication headers based on the model's APIFormat.
 func (p *httpProvider) setAuthHeaders(req *http.Request) error {
+	// Skip authentication if no auth_env_var is configured (e.g., local Ollama)
+	if p.model.AuthEnvVar == "" {
+		return nil
+	}
+
 	format := p.model.APIFormat
 	apiKey := getAPIKey(p.model)
 
