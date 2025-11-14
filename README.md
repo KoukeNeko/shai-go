@@ -98,12 +98,14 @@ shai "troubleshoot" --debug
 
 ## Available Commands
 
-| Command        | Description                                |
-|----------------|--------------------------------------------|
-| `shai [query]` | Generate command from natural language     |
-| `shai health`  | Run system diagnostics                     |
-| `shai reload`  | Reload configuration without shell restart |
-| `shai version` | Show version information                   |
+| Command          | Description                                |
+|------------------|--------------------------------------------|
+| `shai [query]`   | Generate command from natural language     |
+| `shai health`    | Run system diagnostics                     |
+| `shai reload`    | Reload configuration without shell restart |
+| `shai version`   | Show version information                   |
+| `shai install`   | Install shell integration (zsh/bash)       |
+| `shai uninstall` | Remove shell integration completely        |
 
 ### Query Flags
 
@@ -157,6 +159,14 @@ models:
     auth_env_var: ANTHROPIC_API_KEY
     model_id: claude-3-5-sonnet-20240620
     max_tokens: 1024
+    api_format:
+      auth_header_name: x-api-key
+      auth_header_prefix: ""
+      system_message_mode: separate
+      content_wrapper: anthropic
+      response_json_path: content[0].text
+      extra_headers:
+        anthropic-version: "2023-06-01"
 
 context:
   max_files: 20
@@ -267,18 +277,52 @@ rules:
 
 SHAI includes shell integration scripts for inline command generation using the `#` prefix.
 
+### Automated Installation (Recommended)
+
+```bash
+# Auto-detects your shell (zsh/bash) and installs integration
+shai install
+
+# Or specify shell explicitly
+shai install --shell zsh
+shai install --shell bash
+```
+
+This command will:
+1. Copy shell scripts to `~/.shai/shell/`
+2. Add integration to your RC file (`~/.zshrc` or `~/.bashrc`)
+3. Create a timestamped backup of your RC file
+4. Prevent duplicate installations
+
+To activate: `source ~/.zshrc` or restart your terminal.
+
+### Uninstalling
+
+```bash
+# Completely removes all shell integration
+shai uninstall
+
+# What gets removed:
+# - Integration block from RC file
+# - Shell scripts from ~/.shai/shell/
+# - Empty directories
+# Creates backup before modification
+```
+
 ### Manual Installation
+
+If you prefer manual setup:
 
 **For zsh** - Add to `~/.zshrc`:
 
 ```bash
-source ~/.shai/shell/zsh.sh
+[ -f ~/.shai/shell/zsh.sh ] && source ~/.shai/shell/zsh.sh
 ```
 
 **For bash** - Add to `~/.bashrc`:
 
 ```bash
-source ~/.shai/shell/bash.sh
+[ -f ~/.shai/shell/bash.sh ] && source ~/.shai/shell/bash.sh
 ```
 
 Then reload: `source ~/.zshrc` or `source ~/.bashrc`
@@ -305,7 +349,56 @@ export SHAI_BIN="/custom/path/to/shai"
 
 ### Adding Custom Providers
 
-SHAI supports any OpenAI-compatible API via configuration:
+SHAI supports any AI provider through configuration-driven API format specification. No code changes needed.
+
+#### OpenAI-Compatible Providers (Default)
+
+For providers using OpenAI's API format (OpenAI, Ollama, most compatible APIs):
+
+```yaml
+models:
+  - name: gpt-4
+    endpoint: https://api.openai.com/v1/chat/completions
+    auth_env_var: OPENAI_API_KEY
+    model_id: gpt-4-turbo
+    max_tokens: 2048
+    # api_format is optional - defaults to OpenAI format
+    prompt:
+      - role: system
+        content: "You are a shell command generator..."
+      - role: user
+        content: "{{.Prompt}}"
+```
+
+#### Anthropic Claude
+
+For Anthropic's API (different auth, system message, and response format):
+
+```yaml
+models:
+  - name: claude-sonnet-4
+    endpoint: https://api.anthropic.com/v1/messages
+    auth_env_var: ANTHROPIC_API_KEY
+    model_id: claude-3-5-sonnet-20240620
+    max_tokens: 1024
+    api_format:
+      auth_header_name: x-api-key           # Use x-api-key instead of Authorization
+      auth_header_prefix: ""                # No "Bearer " prefix
+      system_message_mode: separate         # System in separate field
+      content_wrapper: anthropic            # Wrap content in [{"type":"text","text":"..."}]
+      response_json_path: content[0].text   # Extract from content array
+      extra_headers:
+        anthropic-version: "2023-06-01"     # Required API version
+    prompt:
+      - role: system
+        content: "You are a shell command generator..."
+      - role: user
+        content: "{{.Prompt}}"
+```
+
+#### Custom Provider Example
+
+For providers with unique API formats:
 
 ```yaml
 models:
@@ -314,22 +407,55 @@ models:
     auth_env_var: CUSTOM_API_KEY
     model_id: custom-model-v1
     max_tokens: 2048
+    api_format:
+      auth_header_name: X-Custom-Auth       # Custom auth header
+      auth_header_prefix: "Token "          # Custom prefix
+      system_message_mode: inline           # inline | separate
+      content_wrapper: openai               # openai | anthropic
+      response_json_path: data.message      # Custom JSON path
+      extra_headers:
+        X-Custom-Version: "1.0"
     prompt:
       - role: system
-        content: |
-          You are a shell command generator. Respond ONLY with the command.
-
-          Context:
-          - Directory: {{.WorkingDir}}
-          - Shell: {{.Shell}}
-          - OS: {{.OS}}
-          - Tools: {{.AvailableTools}}
-          {{- if .GitStatus}}
-          - Git: {{.GitStatus}}
-          {{- end}}
+        content: "You are a shell command generator..."
       - role: user
         content: "{{.Prompt}}"
 ```
+
+### API Format Options
+
+| Field                  | Description                                   | Default          | Examples                           |
+|------------------------|-----------------------------------------------|------------------|------------------------------------|
+| `auth_header_name`     | HTTP header for API key                       | `Authorization`  | `x-api-key`, `X-Custom-Auth`       |
+| `auth_header_prefix`   | Prefix before API key value                   | `Bearer `        | `""`, `Token `, `ApiKey `          |
+| `system_message_mode`  | How to send system messages                   | `inline`         | `inline`, `separate`               |
+| `content_wrapper`      | Message content format                        | `openai`         | `openai`, `anthropic`              |
+| `response_json_path`   | JSON path to extract response                 | `choices[0].message.content` | `content[0].text`, `data.text` |
+| `extra_headers`        | Additional HTTP headers (map)                 | `{}`             | Version headers, custom metadata   |
+
+### System Message Modes
+
+- **`inline`** (OpenAI format): System messages included in `messages` array
+  ```json
+  {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]}
+  ```
+
+- **`separate`** (Anthropic format): System message in dedicated field
+  ```json
+  {"system": "...", "messages": [{"role": "user", "content": "..."}]}
+  ```
+
+### Content Wrapper Formats
+
+- **`openai`**: Direct string content
+  ```json
+  {"role": "user", "content": "list files"}
+  ```
+
+- **`anthropic`**: Wrapped in type/text structure
+  ```json
+  {"role": "user", "content": [{"type": "text", "text": "list files"}]}
+  ```
 
 ### Template Variables
 
