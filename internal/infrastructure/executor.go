@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"time"
@@ -51,7 +52,8 @@ func (e *LocalExecutor) Execute(ctx context.Context, command string, previewOnly
 		Stderr:     stderr.String(),
 		DurationMS: duration,
 	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		result.ExitCode = exitErr.ExitCode()
 		result.Err = err
 		return result, err

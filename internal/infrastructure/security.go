@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/doeshing/shai-go/assets"
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
@@ -132,17 +133,42 @@ func (g *Guardrail) Evaluate(command string) (domain.RiskAssessment, error) {
 func loadRules(path string) (PolicyDocument, error) {
 	var rules PolicyDocument
 	path = securityExpandPath(path)
+
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// fall back to defaults
-		rules.Rules.DangerPatterns = defaultPatterns()
-		rules.Rules.ProtectedPaths = defaultProtectedPaths()
-		rules.Rules.Preview = domain.PreviewRules{MaxFiles: 10}
-		return rules, nil
+		// File doesn't exist, create it from embedded defaults
+		if os.IsNotExist(err) {
+			if err := ensureGuardrailDir(path); err != nil {
+				return PolicyDocument{}, fmt.Errorf("ensure guardrail dir: %w", err)
+			}
+
+			// Parse embedded default first
+			if err := yaml.Unmarshal(assets.DefaultGuardrailYAML, &rules); err != nil {
+				// If embedded YAML is corrupted, fall back to hardcoded defaults
+				rules.Rules.DangerPatterns = defaultPatterns()
+				rules.Rules.ProtectedPaths = defaultProtectedPaths()
+				rules.Rules.Preview = domain.PreviewRules{MaxFiles: 10}
+				rules.Rules.Confirmation = defaultConfirmation()
+				rules.Rules.Whitelist = defaultWhitelist()
+			}
+
+			// Write default to disk for user customization
+			if err := writeDefaultGuardrail(path, assets.DefaultGuardrailYAML); err != nil {
+				// Log warning but continue with in-memory defaults
+				fmt.Fprintf(os.Stderr, "Warning: could not write default guardrail file: %v\n", err)
+			}
+
+			return rules, nil
+		}
+		return PolicyDocument{}, err
 	}
+
+	// File exists, parse it
 	if err := yaml.Unmarshal(data, &rules); err != nil {
 		return PolicyDocument{}, err
 	}
+
+	// Apply defaults for missing fields
 	if len(rules.Rules.DangerPatterns) == 0 {
 		rules.Rules.DangerPatterns = defaultPatterns()
 	}
@@ -158,7 +184,17 @@ func loadRules(path string) (PolicyDocument, error) {
 	if len(rules.Rules.Whitelist) == 0 {
 		rules.Rules.Whitelist = defaultWhitelist()
 	}
+
 	return rules, nil
+}
+
+func ensureGuardrailDir(path string) error {
+	dir := filepath.Dir(path)
+	return os.MkdirAll(dir, domain.DirectoryPermissions)
+}
+
+func writeDefaultGuardrail(path string, data []byte) error {
+	return os.WriteFile(path, data, domain.SecureFilePermissions)
 }
 
 func parseRiskLevel(value string) domain.RiskLevel {

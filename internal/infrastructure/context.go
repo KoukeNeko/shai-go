@@ -39,7 +39,7 @@ func (c *BasicCollector) Collect(ctx context.Context, cfg domain.Config, req dom
 	shell := detectShell()
 	user := os.Getenv("USER")
 
-	files := []domain.FileInfo{}
+	var files []domain.FileInfo
 	if cfg.Context.IncludeFiles {
 		files = listFiles(wd, cfg.Context.MaxFiles)
 	}

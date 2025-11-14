@@ -1,0 +1,169 @@
+# SHAI Security Guardrail Rules
+# This file defines safety policies for command generation and execution.
+#
+# Documentation: https://docs.shai.dev/security
+
+rules:
+  # Danger Patterns
+  # Regular expressions matching dangerous command patterns
+  danger_patterns:
+    # Critical: System destruction
+    - pattern: 'rm\s+-rf\s+/'
+      level: critical
+      action: block
+      message: "Attempting to delete root filesystem"
+
+    - pattern: 'rm\s+-rf\s+\*'
+      level: critical
+      action: explicit_confirm
+      message: "Recursive delete of all files in directory"
+
+    - pattern: 'dd\s+if='
+      level: critical
+      action: block
+      message: "Raw disk operations can destroy data"
+
+    - pattern: 'mkfs\.'
+      level: critical
+      action: block
+      message: "Formatting filesystem will erase all data"
+
+    - pattern: '> /dev/(sd[a-z]|nvme)'
+      level: critical
+      action: block
+      message: "Writing directly to block device"
+
+    - pattern: ':(){ :\|:& };:'
+      level: critical
+      action: block
+      message: "Fork bomb detected"
+
+    # High: Risky operations
+    - pattern: 'curl.*\|\s*sudo'
+      level: high
+      action: confirm
+      message: "Piping remote script to sudo is dangerous"
+
+    - pattern: 'wget.*\|\s*sh'
+      level: high
+      action: confirm
+      message: "Executing remote script without inspection"
+
+    - pattern: 'rm\s+-rf\s+\$HOME'
+      level: high
+      action: explicit_confirm
+      message: "Deleting home directory"
+
+    - pattern: 'sudo\s+rm'
+      level: high
+      action: confirm
+      message: "Deleting files with elevated privileges"
+
+    # Medium: Permission changes
+    - pattern: 'chmod\s+777'
+      level: medium
+      action: simple_confirm
+      message: "Setting overly permissive file permissions"
+
+    - pattern: 'chmod\s+-R\s+777'
+      level: high
+      action: confirm
+      message: "Recursively setting overly permissive permissions"
+
+    - pattern: 'chown\s+-R'
+      level: medium
+      action: simple_confirm
+      message: "Recursively changing file ownership"
+
+  # Protected Paths
+  # Specific filesystem paths that require extra confirmation
+  protected_paths:
+    - path: "/"
+      operations: ["rm", "mv", "chmod", "chown"]
+      level: critical
+      action: block
+      message: "Operations on root directory are blocked"
+
+    - path: "/etc"
+      operations: ["rm", "mv"]
+      level: high
+      action: explicit_confirm
+      message: "Modifying system configuration directory"
+
+    - path: "/usr"
+      operations: ["rm"]
+      level: high
+      action: explicit_confirm
+      message: "Modifying system binaries directory"
+
+    - path: "/var"
+      operations: ["rm -rf"]
+      level: high
+      action: confirm
+      message: "Deleting system state directory"
+
+    - path: "$HOME"
+      operations: ["rm -rf"]
+      level: high
+      action: explicit_confirm
+      message: "Deleting home directory"
+
+    - path: "$HOME/.ssh"
+      operations: ["rm", "chmod"]
+      level: high
+      action: explicit_confirm
+      message: "Modifying SSH credentials"
+
+    - path: "$HOME/.config"
+      operations: ["rm -rf"]
+      level: medium
+      action: confirm
+      message: "Deleting configuration directory"
+
+  # Preview Settings
+  # Controls how many files are shown when operations affect protected paths
+  preview:
+    max_files: 10
+    show_hidden: false
+
+  # Confirmation Levels
+  # Maps risk levels to required user actions
+  confirmation_levels:
+    critical:
+      action: block
+      message: "⛔ This action is blocked by security policy."
+
+    high:
+      action: explicit_confirm
+      message: "⚠️  Type 'yes' to execute this high-risk operation."
+
+    medium:
+      action: confirm
+      message: "⚡ Review the command carefully before continuing."
+
+    low:
+      action: simple_confirm
+      message: "ℹ️  Confirm execution of this low-risk change."
+
+  # Whitelist
+  # Commands that bypass all guardrail checks (read-only operations)
+  whitelist:
+    - "ls"
+    - "ls -"
+    - "pwd"
+    - "echo"
+    - "cat"
+    - "grep"
+    - "find"
+    - "which"
+    - "whereis"
+    - "man"
+    - "help"
+    - "history"
+    - "git status"
+    - "git log"
+    - "git diff"
+    - "git show"
+    - "docker ps"
+    - "kubectl get"
+    - "kubectl describe"

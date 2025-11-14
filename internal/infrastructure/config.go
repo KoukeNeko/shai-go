@@ -2,7 +2,6 @@ package infrastructure
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,13 +12,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/doeshing/shai-go/assets"
 	"github.com/doeshing/shai-go/internal/domain"
 	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/ports"
 )
-
-//go:embed default-config.yaml
-var defaultConfigYAML []byte
 
 // FileLoader loads YAML configuration from ~/.shai/config.yaml (overridable via SHAI_CONFIG).
 type FileLoader struct {
@@ -126,7 +123,7 @@ func (l *FileLoader) Backup() (string, error) {
 
 func defaultConfig() domain.Config {
 	var cfg domain.Config
-	if err := yaml.Unmarshal(defaultConfigYAML, &cfg); err != nil {
+	if err := yaml.Unmarshal(assets.DefaultConfigYAML, &cfg); err != nil {
 		// Fallback to minimal config if embedded YAML is corrupted
 		// This should never happen in production, but provides safety
 		return domain.Config{
