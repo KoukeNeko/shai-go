@@ -34,34 +34,12 @@ function _shai_accept_line() {
   if [[ "$buffer" == \#* ]]; then
     local query="${buffer#\#}"
 
-    # Don't clear buffer yet - keep the # query visible
-    # Start animation on the next line
-    print -n "\n" > /dev/tty
-
-    local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-    local frame_idx=0
-
-    # Start background animation
-    (
-      while true; do
-        print -n "\r${frames[$((frame_idx % 10))]} " > /dev/tty
-        sleep 0.08
-        ((frame_idx++))
-      done
-    ) &
-    local animation_pid=$!
+    # Show loading message
+    zle -M "⠿ Generating command..."
 
     # Generate command and capture output (requires verbose: false in config)
     local generated_cmd
     generated_cmd=$(command "$(_shai_command_bin)" query "$query" 2>/dev/null)
-
-    # Stop animation
-    kill $animation_pid 2>/dev/null
-    wait $animation_pid 2>/dev/null
-    print -n "\r\033[K" > /dev/tty  # Clear spinner line
-
-    # Move cursor up one line to where we started
-    print -n "\033[1A" > /dev/tty
 
     if [[ -n "$generated_cmd" ]]; then
       # Clear the input line and put generated command in buffer
