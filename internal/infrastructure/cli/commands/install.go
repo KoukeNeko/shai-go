@@ -126,13 +126,16 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	// Detect shai binary path
 	shaiBinPath := detectShaiBinaryPath()
 
-	// Add source line to RC file with optional SHAI_BIN export
+	// Add source line to RC file with optional SHAI_BIN export and PATH
 	var integrationBlock string
 	if shaiBinPath != "" && shaiBinPath != "shai" {
-		// shai is not in PATH, need to export SHAI_BIN
-		exportLine := fmt.Sprintf("export SHAI_BIN=\"%s\"", shaiBinPath)
+		// shai is not in PATH, need to export SHAI_BIN and add to PATH
+		shaiBinDir := filepath.Dir(shaiBinPath)
+		exportBinLine := fmt.Sprintf("export SHAI_BIN=\"%s\"", shaiBinPath)
+		exportPathLine := fmt.Sprintf("export PATH=\"%s:$PATH\"", shaiBinDir)
 		sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
-		integrationBlock = fmt.Sprintf("\n%s\n%s\n%s\n%s\n", shaiMarkerStart, exportLine, sourceLine, shaiMarkerEnd)
+		integrationBlock = fmt.Sprintf("\n%s\n%s\n%s\n%s\n%s\n",
+			shaiMarkerStart, exportBinLine, exportPathLine, sourceLine, shaiMarkerEnd)
 	} else {
 		// shai is in PATH or use default
 		sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
@@ -152,7 +155,9 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	fmt.Fprintf(out, "✓ Added integration to %s\n", rcFile)
 
 	if shaiBinPath != "" && shaiBinPath != "shai" {
+		shaiBinDir := filepath.Dir(shaiBinPath)
 		fmt.Fprintf(out, "✓ Set SHAI_BIN=%s\n", shaiBinPath)
+		fmt.Fprintf(out, "✓ Added %s to PATH\n", shaiBinDir)
 	}
 
 	fmt.Fprintf(out, "\n✨ Installation complete!\n\n")
