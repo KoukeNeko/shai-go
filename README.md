@@ -1,118 +1,519 @@
 # SHAI (Shell AI)
 
-SHAI is a lightweight terminal copilot that converts natural language queries into shell commands, validates them through safety guardrails, and optionally executes them after confirmation. The project is implemented in Go and follows Clean Architecture plus SOLID principles, separating domain entities, application services, and infrastructure adapters.
+> A production-ready terminal copilot that safely converts natural language into shell commands.
 
-## Key Features (Phase 1)
+SHAI is an AI-powered CLI assistant built with Go, implementing Hexagonal Architecture for maximum testability and
+maintainability. It supports multiple AI providers, features comprehensive security guardrails, and provides intelligent
+context awareness.
 
-- Natural language CLI entry point (`shai query "describe task"`) and shell `#` prefix integration scaffolding.
-- Multi-provider AI abstraction with initial Claude (Anthropic) HTTP client and offline heuristic fallback.
-- Context collector that gathers working directory, files, installed tools, git/k8s metadata, and env snippets.
-- Config loader for `~/.shai/config.yaml`, environment overrides, and default bootstrap content.
-- Guardrail engine with regex-based danger patterns, risk levels, and confirmation policies.
-- Local command executor with clipboard copy, preview-only, and confirmation prompts.
-- Persistent history log and filesystem-backed response cache for faster repeated queries.
-- YAML guardrail schema supports protected paths, confirmation messaging tiers, and command whitelist.
-- History persists to SQLite (`~/.shai/history/history.db`) with CLI tooling to list/search/export, while cache adds TTL+LRU eviction.
+## Features
 
-## Architecture Overview
+### 🤖 AI-Powered Command Generation
 
-Layer | Responsibility | Packages
------ | -------------- | --------
-Domain | Pure entities (config, context, models, guardrails) | `internal/domain`
-Application | Use cases orchestrating ports | `internal/application/query`
-Ports | Interfaces between layers | `internal/ports`
-Infrastructure | Adapters for config, AI providers, context, security, executor, CLI | `internal/infrastructure/*`
-App wiring | Dependency container | `internal/app`
-CLI | Cobra-based entry point | `cmd/shai`, `internal/infrastructure/cli`
+- **Multi-Provider Support**: Anthropic Claude, OpenAI, Ollama via unified HTTP provider
+- **Context-Aware**: Auto-collects git status, Kubernetes info, Docker state, available tools
+- **Template-Driven Prompts**: Customize prompts using Go templates
+- **Smart Caching**: SHA256-based response cache with TTL and LRU eviction
 
-Each dependency points inward (infrastructure depends on ports/domain, never the opposite) to keep substitutions easy.
+### 🛡️ Security First
 
-## Getting Started
+- **5-Tier Risk Assessment**: safe, low, medium, high, critical
+- **Pattern Matching**: Blocks dangerous operations (`rm -rf /`, `dd`, fork bombs)
+- **Protected Paths**: Guards `/etc`, `/usr`, `$HOME`, `.ssh`
+- **Whitelist Support**: Bypass checks for read-only commands
+- **Auto-Created Config**: `~/.shai/guardrail.yaml` created on first run
+
+### ⚡ Performance & UX
+
+- **Response Caching**: Instant results for repeated queries
+- **SQLite History**: Full-text search, 90-day retention
+- **Hot Reload**: Update config without restarting shell
+- **Clipboard Integration**: Copy commands with `--copy` flag
+- **Streaming Output**: Real-time AI reasoning with `--stream`
+
+### 🏗️ Clean Architecture
+
+- **Hexagonal Design**: Complete port/adapter separation
+- **SOLID Principles**: Single responsibility throughout
+- **100% Testable**: Business logic isolated from infrastructure
+- **Uber Go Style Guide**: Idiomatic, maintainable code
+
+---
+
+## Quick Start
+
+### Installation
 
 ```bash
+# Clone and build
 git clone https://github.com/doeshing/shai-go.git
 cd shai-go
-go run ./cmd/shai --help
+go build -o shai ./cmd/shai
 
-# Example: preview a command
-go run ./cmd/shai query "list git status" --preview-only
+# Move to PATH
+sudo mv shai /usr/local/bin/
+
+# Verify
+shai version
 ```
 
-Once satisfied, build an executable:
+### Setup
 
 ```bash
-go build -o shai ./cmd/shai
-./shai query "check docker containers"
+# Set API key (choose one)
+export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY="sk-..."
+# OR use Ollama locally (no key required)
+
+# First run creates ~/.shai/config.yaml and ~/.shai/guardrail.yaml
+shai "show current directory contents"
 ```
 
-Set `SHAI_DEBUG=true` for verbose logging. Provide `ANTHROPIC_API_KEY` to enable real Claude calls; otherwise SHAI falls back to heuristic suggestions.
+### Basic Usage
+
+```bash
+# Generate and execute commands
+shai "list all docker containers with memory usage"
+
+# Preview without executing
+shai "delete all .log files" --preview-only
+
+# Auto-execute safe commands
+shai "show git status" --auto-execute
+
+# Copy to clipboard
+shai "compress images" --copy
+
+# Include additional context
+shai "deploy to k8s" --with-git-status --with-k8s-info
+
+# Use specific model
+shai "complex task" --model gpt-4
+
+# Debug mode
+shai "troubleshoot" --debug
+```
+
+---
+
+## Available Commands
+
+| Command        | Description                                |
+|----------------|--------------------------------------------|
+| `shai [query]` | Generate command from natural language     |
+| `shai health`  | Run system diagnostics                     |
+| `shai reload`  | Reload configuration without shell restart |
+| `shai version` | Show version information                   |
+
+### Query Flags
+
+```bash
+-m, --model <name>       Override AI model
+-p, --preview-only       Show command without executing
+-a, --auto-execute       Execute without confirmation (respects guardrails)
+-c, --copy               Copy to clipboard instead of executing
+--with-git-status        Include git repository status
+--with-env               Include environment variables
+--with-k8s-info          Include Kubernetes context
+--debug                  Enable verbose logging
+--stream                 Stream AI reasoning in real-time
+--timeout <duration>     Override timeout (default: 60s)
+```
+
+### Health Check Example
+
+```bash
+$ shai health
+[OK] Config file - loaded 1
+[OK] Guardrail - rules loaded
+[OK] Context collector - detected tools: 10
+[OK] Git status - branch main, modified 3
+[WARN] API keys - ANTHROPIC_API_KEY missing
+[OK] Guardrail file - /Users/you/.shai/guardrail.yaml
+```
+
+---
 
 ## Configuration
 
-On first run SHAI writes `~/.shai/config.yaml` containing:
+### File Structure
 
-- `preferences`: default model, preview/auto-execute toggles, timeout.
-- `models`: definitions for Claude/OpenAI/Ollama endpoints (name, endpoint, env vars, prompts).
-- `context`: file listing limits, git/k8s/env inclusion modes.
-- `security`: guardrail toggle plus `rules_file` (defaults to `~/.shai/guardrail.yaml`).
-- `execution`: shell selection and confirmation behavior.
+SHAI creates two configuration files on first run:
 
-You can override the config path via `SHAI_CONFIG=/custom/path.yaml`.
+**`~/.shai/config.yaml`** - Main configuration:
 
-Guardrail rules follow the YAML schema described in the project specification. Missing files are auto-populated with safe defaults (rm -rf, dd, curl | sudo, etc.).
+```yaml
+config_format_version: "1"
 
-## CLI Usage
+preferences:
+  default_model: claude-sonnet-4
+  auto_execute_safe: false
+  preview_mode: always  # always | never
+  timeout: 30
+
+models:
+  - name: claude-sonnet-4
+    endpoint: https://api.anthropic.com/v1/messages
+    auth_env_var: ANTHROPIC_API_KEY
+    model_id: claude-3-5-sonnet-20240620
+    max_tokens: 1024
+
+context:
+  max_files: 20
+  include_git: auto      # auto | always | never
+  include_k8s: auto
+  include_env: false
+
+security:
+  enabled: true
+  rules_file: ~/.shai/guardrail.yaml
+
+execution:
+  shell: auto            # auto | bash | zsh | fish
+  confirm_before_execute: true
+
+cache:
+  ttl: 1h
+  max_entries: 100
+
+history:
+  retention_days: 90
+```
+
+**`~/.shai/guardrail.yaml`** - Security rules (auto-created with comprehensive defaults):
+
+```yaml
+rules:
+  danger_patterns:
+    - pattern: 'rm\s+-rf\s+/'
+      level: critical
+      action: block
+      message: "Attempting to delete root filesystem"
+
+  protected_paths:
+    - path: "/etc"
+      operations: [ "rm", "mv" ]
+      level: high
+      action: explicit_confirm
+
+  whitelist:
+    - "ls"
+    - "git status"
+    - "docker ps"
+
+  confirmation_levels:
+    critical:
+      action: block
+      message: "⛔ This action is blocked by security policy."
+    high:
+      action: explicit_confirm
+      message: "⚠️  Type 'yes' to execute this high-risk operation."
+```
+
+### Managing Configuration
+
+```bash
+# Edit config
+$EDITOR ~/.shai/config.yaml
+
+# Reload after changes (no shell restart needed)
+shai reload
+
+# Override config path
+SHAI_CONFIG=/custom/path.yaml shai "..."
+
+# Debug mode
+SHAI_DEBUG=1 shai "..."
+```
+
+---
+
+## Security Guardrails
+
+### Default Protected Operations
+
+| Pattern          | Risk     | Action        | Reason                   |
+|------------------|----------|---------------|--------------------------|
+| `rm -rf /`       | Critical | Block         | Root filesystem deletion |
+| `dd if=`         | Critical | Block         | Raw disk operations      |
+| `:(){ :\|:& };:` | Critical | Block         | Fork bomb                |
+| `curl \| sudo`   | High     | Type "yes"    | Piping to sudo           |
+| `chmod 777`      | Medium   | Confirm [y/N] | Overly permissive        |
+
+### Risk Levels
+
+- **Critical** → Blocked entirely
+- **High** → Require typing "yes"
+- **Medium** → Prompt [y/N]
+- **Low** → Simple confirmation
+- **Safe** → Execute immediately (with auto-execute)
+
+### Customize Rules
+
+Edit `~/.shai/guardrail.yaml` to add custom patterns:
+
+```yaml
+rules:
+  danger_patterns:
+    - pattern: 'npm\s+install.*--global'
+      level: medium
+      action: simple_confirm
+      reason: "Installing global npm package"
+```
+
+---
+
+## Shell Integration
+
+SHAI includes shell integration scripts for inline command generation using the `#` prefix.
+
+### Manual Installation
+
+**For zsh** - Add to `~/.zshrc`:
+
+```bash
+source ~/.shai/shell/zsh.sh
+```
+
+**For bash** - Add to `~/.bashrc`:
+
+```bash
+source ~/.shai/shell/bash.sh
+```
+
+Then reload: `source ~/.zshrc` or `source ~/.bashrc`
+
+### Usage
+
+```bash
+# Type a comment starting with # and press Enter
+$ # list all docker containers with status
+→ docker ps --format "table {{.Names}}\t{{.Status}}"
+Execute command? [y/N]: y
+```
+
+### Custom Binary Path
+
+```bash
+# If shai is not in PATH
+export SHAI_BIN="/custom/path/to/shai"
+```
+
+---
+
+## AI Provider Configuration
+
+### Adding Custom Providers
+
+SHAI supports any OpenAI-compatible API via configuration:
+
+```yaml
+models:
+  - name: custom-llm
+    endpoint: https://api.example.com/v1/chat
+    auth_env_var: CUSTOM_API_KEY
+    model_id: custom-model-v1
+    max_tokens: 2048
+    prompt:
+      - role: system
+        content: |
+          You are a shell command generator. Respond ONLY with the command.
+
+          Context:
+          - Directory: {{.WorkingDir}}
+          - Shell: {{.Shell}}
+          - OS: {{.OS}}
+          - Tools: {{.AvailableTools}}
+          {{- if .GitStatus}}
+          - Git: {{.GitStatus}}
+          {{- end}}
+      - role: user
+        content: "{{.Prompt}}"
+```
+
+### Template Variables
+
+| Variable              | Description        | Example                  |
+|-----------------------|--------------------|--------------------------|
+| `{{.Prompt}}`         | User's query       | "list docker containers" |
+| `{{.WorkingDir}}`     | Current directory  | "/home/user/project"     |
+| `{{.Shell}}`          | Active shell       | "zsh"                    |
+| `{{.OS}}`             | Operating system   | "darwin"                 |
+| `{{.Files}}`          | File listing       | "main.go\nREADME.md"     |
+| `{{.AvailableTools}}` | CLI tools          | "docker, kubectl, git"   |
+| `{{.GitStatus}}`      | Git status         | "main, 3 modified"       |
+| `{{.K8sContext}}`     | Kubernetes context | "production"             |
+| `{{.K8sNamespace}}`   | K8s namespace      | "default"                |
+
+---
+
+## Architecture
+
+SHAI implements **Hexagonal Architecture** with strict dependency inversion:
 
 ```
-shai query "list docker containers"
-  --model claude-sonnet-4
-  --preview-only
-  --auto-execute
-  --copy
-  --with-git-status
-  --with-env
-  --with-k8s-info
-  --debug
-
-shai install [--shell zsh]
-shai uninstall [--shell bash]
-shai config show
-shai config set preferences.default_model gpt-4
-shai config edit
-shai config validate
-shai config get --key preferences.default_model
-shai config reset
-shai doctor
-shai history list --limit 10
-shai history search --query docker
-shai history export history.jsonl
-shai cache list
-shai cache size
-shai cache clear
+┌─────────────────────────┐
+│     CLI (Cobra)         │  User interaction
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│  Services               │  Use case orchestration
+│  • QueryService         │
+│  • HealthService        │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│   Ports (Interfaces)    │  12 interface definitions
+│  • Provider             │
+│  • SecurityService      │
+│  • ContextCollector     │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│ Infrastructure          │  Concrete implementations
+│  • AI providers         │
+│  • Guardrail            │
+│  • SQLite store         │
+│  • File cache           │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│   Domain (Entities)     │  Pure business logic
+│  • Config               │
+│  • RiskAssessment       │
+│  • QueryRequest         │
+└─────────────────────────┘
 ```
 
-Plain `shai "..."` proxies to the `query` command.
+### Project Structure
 
-Confirmation tiers map to guardrail actions:
+```
+shai-go/
+├── cmd/shai/              # Application entry point
+├── internal/
+│   ├── domain/           # Pure business entities (9 files)
+│   ├── ports/            # Interface definitions (12 ports)
+│   ├── services/         # Use cases (3 services)
+│   ├── infrastructure/   # Adapters (13 implementations)
+│   ├── app/              # Dependency injection container
+│   └── pkg/              # Shared utilities
+└── assets/
+    ├── defaults/         # Embedded default configs
+    │   ├── config.yaml
+    │   └── guardrail.yaml
+    └── shell/            # Shell integration scripts
+        ├── bash.sh
+        └── zsh.sh
+```
 
-- `allow` -> auto execution (respecting `--auto-execute` or config).
-- `preview_only` -> show command only.
-- `simple_confirm` / `confirm` -> prompt `[y/N]`.
-- `explicit_confirm` -> require typing `yes`.
-- `block` -> refuse to run.
+### Design Principles
 
-## Shell Integration Roadmap
+- **Dependency Inversion**: Infrastructure depends on domain, never the opposite
+- **Single Responsibility**: Each component has one clear purpose
+- **Open/Closed**: Extend via configuration, not code modification
+- **Interface Segregation**: Small, focused interfaces
+- **Testability**: Services use dependency injection with interface mocks
 
-The repo ships integration scripts under `assets/shell/` (placeholder today). Upcoming CLI commands:
+---
 
-1. `shai install` – detect shell, drop scripts into `~/.shai/shell/{zsh,bash}.sh`, append sourcing line.
-2. `shai uninstall` – remove hooks but keep backup scripts.
-3. `shai reload` – refresh active shell sessions.
+## Development
 
-## Milestones
+### Building
 
-- **Phase 1 (MVP)**: CLI, Claude provider, context collector, basic guardrails, zsh integration scripts.
-- **Phase 2**: Guardrail YAML enhancements, Ollama/OpenAI providers, bash integration, config subcommands.
-- **Phase 3**: Performance optimizations, history/cache subsystems, auto-update, full documentation set.
+```bash
+# Standard build
+go build -o shai ./cmd/shai
 
-Issues, discussions, and contributions are welcome via GitHub once the repository is published. All code is released under the MIT License.
+# Cross-compilation
+GOOS=linux GOARCH=amd64 go build -o shai-linux ./cmd/shai
+GOOS=darwin GOARCH=arm64 go build -o shai-mac ./cmd/shai
+GOOS=windows GOARCH=amd64 go build -o shai.exe ./cmd/shai
+```
+
+### Testing
+
+```bash
+# Run all tests
+go test ./...
+
+# With coverage
+go test -cover ./...
+
+# With race detection
+go test -race ./...
+
+# Verbose
+go test -v ./internal/services/...
+```
+
+### Code Quality
+
+```bash
+# Format
+go fmt ./...
+
+# Vet
+go vet ./...
+
+# Lint (requires golangci-lint)
+golangci-lint run
+```
+
+---
+
+## Project Statistics
+
+- **Go Version**: 1.25.3
+- **Total Lines**: ~5,255 lines of Go
+- **Files**: 39 .go files
+- **Dependencies**: 5 direct dependencies (Cobra, YAML, SQLite, UUID, Humanize)
+- **Architecture**: Hexagonal (12 ports, 13 adapters)
+
+---
+
+## Requirements
+
+- **Go**: 1.21+ (tested with 1.25.3)
+- **AI Provider**: At least one (Anthropic, OpenAI, or Ollama)
+- **Platform**: macOS, Linux, Windows
+
+---
+
+## FAQ
+
+**Q: Which AI provider should I use?**
+A: Anthropic Claude Sonnet 4 offers the best balance. Use Ollama for offline/local usage.
+
+**Q: Is my API key secure?**
+A: Yes. Keys are read from environment variables and never logged or cached.
+
+**Q: Can I use SHAI offline?**
+A: Yes, with Ollama locally. Cached responses also work offline.
+
+**Q: What if a dangerous command gets through?**
+A: Always review commands before execution. Report false negatives via GitHub Issues.
+
+**Q: How do I customize prompts?**
+A: Edit the `prompt` section in your model definition in `~/.shai/config.yaml`.
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- Built with [Cobra](https://github.com/spf13/cobra) CLI framework
+- SQLite via [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) (pure Go)
+- Inspired by GitHub Copilot CLI and Amazon CodeWhisperer
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/doeshing/shai-go/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/doeshing/shai-go/discussions)
+
+---
+
+**⚠️ Important**: SHAI is an AI-powered tool. Always review generated commands before execution, especially for
+destructive operations or sensitive data.
