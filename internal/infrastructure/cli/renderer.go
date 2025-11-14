@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/doeshing/shai-go/internal/domain"
@@ -10,6 +11,12 @@ import (
 // RenderResponse prints the response in a friendly, ASCII-only format.
 // If verbose is true, shows detailed context information (directory, tools, model).
 func RenderResponse(resp domain.QueryResponse, verbose bool) {
+	// For shell integration: output command to file descriptor 3 if available
+	if fd3 := os.Getenv("SHAI_SHELL_MODE"); fd3 != "" {
+		fmt.Fprintln(os.Stderr, resp.Command)
+		return
+	}
+
 	if verbose {
 		fmt.Println("SHAI analysis complete")
 		fmt.Printf("Directory: %s\n", resp.ContextInformation.WorkingDir)
