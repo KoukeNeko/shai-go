@@ -101,12 +101,3 @@ security:
 execution:
   shell: auto           # auto | bash | zsh | fish
   confirm_before_execute: true
-
-# Response cache settings
-cache:
-  ttl: 1h
-  max_entries: 100
-
-# Command history settings
-history:
-  retention_days: 90

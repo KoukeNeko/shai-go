@@ -26,20 +26,6 @@ const (
 	DefaultPreviewMaxFiles = 10
 	// MinPreviewMaxFiles is the minimum number of files to preview
 	MinPreviewMaxFiles = 1
-	// DefaultMaxCacheEntries is the maximum number of cache entries
-	DefaultMaxCacheEntries = 100
-)
-
-// History constants
-const (
-	// DefaultHistoryLimit is the default number of history records to display
-	DefaultHistoryLimit = 20
-	// DefaultHistorySearchLimit is the default number of search results to return
-	DefaultHistorySearchLimit = 50
-	// DefaultHistoryRetainDays is the default number of days to retain history
-	DefaultHistoryRetainDays = 30
-	// MaxHistoryAnalysisRecords is the maximum number of records to analyze
-	MaxHistoryAnalysisRecords = 1000
 )
 
 // Model configuration constants

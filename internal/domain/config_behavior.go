@@ -181,26 +181,6 @@ func (c *Config) GetMaxContextFiles() int {
 	return c.Context.MaxFiles
 }
 
-// GetCacheMaxEntries returns the maximum number of cache entries
-func (c *Config) GetCacheMaxEntries() int {
-	const defaultMaxEntries = 100
-
-	if c.Cache.MaxEntries <= 0 {
-		return defaultMaxEntries
-	}
-	return c.Cache.MaxEntries
-}
-
-// GetHistoryRetentionDays returns the number of days to retain history
-func (c *Config) GetHistoryRetentionDays() int {
-	const defaultRetentionDays = 30
-
-	if c.History.RetentionDays <= 0 {
-		return defaultRetentionDays
-	}
-	return c.History.RetentionDays
-}
-
 // GetTimeoutSeconds returns the command execution timeout in seconds
 func (c *Config) GetTimeoutSeconds() int {
 	const defaultTimeoutSeconds = 30

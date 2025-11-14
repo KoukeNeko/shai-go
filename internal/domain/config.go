@@ -14,8 +14,6 @@ type Config struct {
 	Context             ContextSettings   `yaml:"context"`
 	Security            SecuritySettings  `yaml:"security"`
 	Execution           ExecutionSettings `yaml:"execution"`
-	Cache               CacheSettings     `yaml:"cache"`
-	History             HistorySettings   `yaml:"history"`
 }
 
 // Preferences contains user-level behavioral settings and toggles.
@@ -51,17 +49,4 @@ type SecuritySettings struct {
 type ExecutionSettings struct {
 	Shell                string `yaml:"shell"`
 	ConfirmBeforeExecute bool   `yaml:"confirm_before_execute"`
-}
-
-// CacheSettings configures response caching to reduce API calls and improve performance.
-// Cached responses are stored locally with a time-to-live and maximum entry limit.
-type CacheSettings struct {
-	TTL        string `yaml:"ttl"`
-	MaxEntries int    `yaml:"max_entries"`
-}
-
-// HistorySettings controls command history persistence and retention.
-// History allows users to review and reuse previous AI-generated commands.
-type HistorySettings struct {
-	RetentionDays int `yaml:"retention_days"`
 }

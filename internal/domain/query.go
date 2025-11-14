@@ -26,7 +26,6 @@ type QueryResponse struct {
 	ExecutionPlanned   bool
 	ExecutionResult    *ExecutionResult
 	ContextInformation ContextSnapshot
-	FromCache          bool
 	ModelUsed          string
 }
 

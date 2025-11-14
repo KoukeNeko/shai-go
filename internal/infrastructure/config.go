@@ -168,18 +168,8 @@ func hydrateDefaults(cfg domain.Config) domain.Config {
 			cfg.Models[i].Prompt = defaultPromptMessages()
 		}
 	}
-	if cfg.Cache.TTL == "" {
-		cfg.Cache.TTL = "1h"
-	}
-	if cfg.Cache.MaxEntries <= 0 {
-		cfg.Cache.MaxEntries = 100
-	}
-	if cfg.History.RetentionDays < 0 {
-		cfg.History.RetentionDays = 0
-	}
 	return cfg
 }
-
 
 func expandPath(path string) string {
 	if filepath.IsAbs(path) {

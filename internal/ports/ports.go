@@ -96,42 +96,6 @@ type ShellIntegrator interface {
 	DetectShell() string
 }
 
-// HistoryStore persists command generation history for later review and reuse.
-// Each record captures the prompt, generated command, and execution outcome.
-type HistoryStore interface {
-	Save(record domain.HistoryRecord) error
-}
-
-// HistoryRepository extends HistoryStore with querying and management capabilities.
-// Provides search, export, cleanup, and retention policy enforcement.
-type HistoryRepository interface {
-	HistoryStore
-	Records(limit int, search string) ([]domain.HistoryRecord, error)
-	Clear() error
-	ExportJSON(path string) error
-	Path() string
-	PruneOlderThan(days int) error
-	SetRetentionDays(days int)
-}
-
-// CacheStore stores AI provider responses to reduce API calls and improve performance.
-// Responses are keyed by a hash of the prompt and context for quick retrieval.
-type CacheStore interface {
-	Get(key string) (domain.CacheEntry, bool, error)
-	Set(entry domain.CacheEntry) error
-}
-
-// CacheRepository extends CacheStore with cache management and inspection utilities.
-// Allows viewing cache contents, clearing cache, and updating cache settings.
-type CacheRepository interface {
-	CacheStore
-	Entries() ([]domain.CacheEntry, error)
-	Clear() error
-	Dir() string
-	Settings() domain.CacheSettings
-	Update(settings domain.CacheSettings) error
-}
-
 // Logger provides structured logging abstraction for the application layer.
 // Implementations can route to different backends (stdout, files, external services).
 type Logger interface {

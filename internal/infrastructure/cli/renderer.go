@@ -37,9 +37,6 @@ func RenderResponse(resp domain.QueryResponse, verbose bool) {
 		fmt.Println("SHAI analysis complete")
 		fmt.Printf("Directory: %s\n", resp.ContextInformation.WorkingDir)
 		fmt.Printf("Tools: %s\n", strings.Join(resp.ContextInformation.AvailableTools, ", "))
-		if resp.FromCache {
-			fmt.Println("Note: result served from cache")
-		}
 		if resp.ModelUsed != "" {
 			fmt.Printf("Model: %s\n", resp.ModelUsed)
 		}

@@ -123,7 +123,7 @@ type stubExecutor struct {
 	called bool
 }
 
-func (s *stubExecutor) Execute(context.Context, string, bool) (domain.ExecutionResult, error) {
+func (s *stubExecutor) Execute(context.Context, string) (domain.ExecutionResult, error) {
 	s.called = true
 	return s.result, s.err
 }
