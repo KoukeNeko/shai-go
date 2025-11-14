@@ -24,9 +24,9 @@ _shai_handle_debug() {
     local query="${cmd#\#}"
     history -d $((HISTCMD)) 2>/dev/null || true
 
-    # Generate command and capture output
+    # Generate command and capture output (requires verbose: false in config)
     local generated_cmd
-    generated_cmd=$(SHAI_SHELL_MODE=1 "$(_shai_command_bin)" query "$query" 2>&1 >/dev/null)
+    generated_cmd=$("$(_shai_command_bin)" query "$query" 2>/dev/null)
 
     if [[ -n "$generated_cmd" ]]; then
       # Put generated command in readline buffer for user to review/execute

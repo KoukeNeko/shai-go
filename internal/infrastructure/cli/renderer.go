@@ -2,21 +2,26 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/doeshing/shai-go/internal/domain"
 )
 
 // RenderResponse prints the response in a friendly, ASCII-only format.
-// If verbose is true, shows detailed context information (directory, tools, model).
+// If verbose is false, only outputs the command (for shell integration).
+// If verbose is true, shows detailed context information.
+// Always shows guardrail blocks regardless of verbose setting.
 func RenderResponse(resp domain.QueryResponse, verbose bool) {
-	// For shell integration: output command to file descriptor 3 if available
-	if fd3 := os.Getenv("SHAI_SHELL_MODE"); fd3 != "" {
-		fmt.Fprintln(os.Stderr, resp.Command)
+	// Check if command was blocked by guardrail
+	isBlocked := resp.RiskAssessment.Action == "block"
+
+	// If not verbose and not blocked, only output the command
+	if !verbose && !isBlocked {
+		fmt.Println(resp.Command)
 		return
 	}
 
+	// Verbose mode or blocked: show full details
 	if verbose {
 		fmt.Println("SHAI analysis complete")
 		fmt.Printf("Directory: %s\n", resp.ContextInformation.WorkingDir)
@@ -61,7 +66,7 @@ func RenderResponse(resp domain.QueryResponse, verbose bool) {
 			fmt.Println("\nstderr:")
 			fmt.Println(resp.ExecutionResult.Stderr)
 		}
-	} else {
+	} else if verbose || isBlocked {
 		fmt.Println("\nCommand was not executed (preview mode or confirmation pending).")
 	}
 }

@@ -36,9 +36,9 @@ function _shai_accept_line() {
     BUFFER=""
     zle reset-prompt
 
-    # Generate command and capture output
+    # Generate command and capture output (requires verbose: false in config)
     local generated_cmd
-    generated_cmd=$(SHAI_SHELL_MODE=1 command "$(_shai_command_bin)" query "$query" 2>&1 >/dev/null)
+    generated_cmd=$(command "$(_shai_command_bin)" query "$query" 2>/dev/null)
 
     if [[ -n "$generated_cmd" ]]; then
       # Put generated command in buffer for user to review/execute
