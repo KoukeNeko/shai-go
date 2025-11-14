@@ -101,7 +101,21 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 			if stream {
 				req.StreamWriter = NewStreamWriter(cmd.OutOrStdout())
 			}
+
+			// Show spinner during query execution (only in non-verbose mode)
+			var spinner *Spinner
+			if !cfg.Preferences.Verbose {
+				spinner = NewSpinner(cmd.ErrOrStderr())
+				spinner.Start()
+			}
+
 			resp, queryErr := container.QueryService.Run(req)
+
+			// Stop spinner before rendering response
+			if spinner != nil {
+				spinner.Stop()
+			}
+
 			RenderResponse(resp, cfg.Preferences.Verbose)
 			return queryErr
 		},

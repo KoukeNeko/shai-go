@@ -34,10 +34,8 @@ function _shai_accept_line() {
   if [[ "$buffer" == \#* ]]; then
     local query="${buffer#\#}"
 
-    # Show loading message
-    zle -M "⠿ Generating command..."
-
     # Generate command and capture output (requires verbose: false in config)
+    # Spinner is shown by the shai binary itself
     local generated_cmd
     generated_cmd=$(command "$(_shai_command_bin)" query "$query" 2>/dev/null)
 

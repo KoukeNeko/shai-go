@@ -24,10 +24,8 @@ _shai_handle_debug() {
     local query="${cmd#\#}"
     history -d $((HISTCMD)) 2>/dev/null || true
 
-    # Show loading message
-    echo "⠿ Generating command..." >&2
-
     # Generate command and capture output (requires verbose: false in config)
+    # Spinner is shown by the shai binary itself
     local generated_cmd
     generated_cmd=$("$(_shai_command_bin)" query "$query" 2>/dev/null)
 
