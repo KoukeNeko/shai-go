@@ -28,7 +28,7 @@ func RenderResponse(resp domain.QueryResponse, verbose bool) {
 	if !verbose && !isBlocked {
 		// Strip markdown code block formatting (backticks)
 		cleanCmd := stripMarkdownFormatting(resp.Command)
-		fmt.Println(cleanCmd)
+		fmt.Print(cleanCmd) // No newline for shell integration
 		return
 	}
 
