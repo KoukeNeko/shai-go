@@ -35,7 +35,17 @@ function _shai_accept_line() {
     local query="${buffer#\#}"
     BUFFER=""
     zle reset-prompt
-    command "$(_shai_command_bin)" query "$query"
+
+    # Generate command and capture output
+    local generated_cmd
+    generated_cmd=$(command "$(_shai_command_bin)" query --command-only "$query" 2>/dev/null)
+
+    if [[ -n "$generated_cmd" ]]; then
+      # Put generated command in buffer for user to review/execute
+      BUFFER="$generated_cmd"
+      zle reset-prompt
+      zle end-of-line
+    fi
     return 0
   fi
   if (( $+functions[_shai_accept_line_original] )); then

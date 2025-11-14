@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -66,6 +67,7 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 		debug       bool
 		timeout     time.Duration
 		stream      bool
+		commandOnly bool
 	)
 
 	cmd := &cobra.Command{
@@ -102,6 +104,16 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 				req.StreamWriter = NewStreamWriter(cmd.OutOrStdout())
 			}
 			resp, queryErr := container.QueryService.Run(req)
+
+			// Command-only mode for shell integration
+			if commandOnly {
+				if queryErr != nil {
+					return queryErr
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), resp.Command)
+				return nil
+			}
+
 			RenderResponse(resp, cfg.Preferences.Verbose)
 			return queryErr
 		},
@@ -116,6 +128,7 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 	cmd.Flags().BoolVar(&debug, "debug", false, "Enable verbose logging")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "Override request timeout")
 	cmd.Flags().BoolVar(&stream, "stream", false, "Stream provider reasoning output")
+	cmd.Flags().BoolVar(&commandOnly, "command-only", false, "Output only the generated command (for shell integration)")
 
 	return cmd
 }

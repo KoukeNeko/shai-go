@@ -23,7 +23,20 @@ _shai_handle_debug() {
   if [[ "$cmd" == \#* ]]; then
     local query="${cmd#\#}"
     history -d $((HISTCMD)) 2>/dev/null || true
-    "$(_shai_command_bin)" query "$query"
+
+    # Generate command and capture output
+    local generated_cmd
+    generated_cmd=$("$(_shai_command_bin)" query --command-only "$query" 2>/dev/null)
+
+    if [[ -n "$generated_cmd" ]]; then
+      # Put generated command in readline buffer for user to review/execute
+      history -s "$generated_cmd"
+      # Use bind to insert the command into the current line
+      bind '"\er": redraw-current-line'
+      bind '"\e^": magic-space'
+      READLINE_LINE="$generated_cmd"
+      READLINE_POINT=${#READLINE_LINE}
+    fi
     return 1
   fi
 }
