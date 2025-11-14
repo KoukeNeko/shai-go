@@ -9,6 +9,7 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/infrastructure/cli/commands"
 )
 
 // Options holds CLI-level configuration.
@@ -49,6 +50,8 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 	root.AddCommand(newHealthCommand(container))
 	root.AddCommand(newReloadCommand(container))
 	root.AddCommand(newVersionCommand())
+	root.AddCommand(commands.NewInstallCommand())
+	root.AddCommand(commands.NewUninstallCommand())
 	return root, nil
 }
 

@@ -13,3 +13,13 @@ var DefaultConfigYAML []byte
 //
 //go:embed defaults/guardrail.yaml
 var DefaultGuardrailYAML []byte
+
+// ShellZshScript contains the zsh integration script.
+//
+//go:embed shell/zsh.sh
+var ShellZshScript []byte
+
+// ShellBashScript contains the bash integration script.
+//
+//go:embed shell/bash.sh
+var ShellBashScript []byte
