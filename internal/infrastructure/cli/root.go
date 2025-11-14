@@ -80,6 +80,13 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 				ctx, cancel = context.WithTimeout(ctx, timeout)
 				defer cancel()
 			}
+
+			// Load config to get verbose setting
+			cfg, err := container.ConfigProvider.Load(ctx)
+			if err != nil {
+				return err
+			}
+
 			req := domain.QueryRequest{
 				Context:         ctx,
 				Prompt:          strings.Join(args, " "),
@@ -96,9 +103,9 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 			if stream {
 				req.StreamWriter = NewStreamWriter(cmd.OutOrStdout())
 			}
-			resp, err := container.QueryService.Run(req)
-			RenderResponse(resp)
-			return err
+			resp, queryErr := container.QueryService.Run(req)
+			RenderResponse(resp, cfg.Preferences.Verbose)
+			return queryErr
 		},
 	}
 

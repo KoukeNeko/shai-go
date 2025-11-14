@@ -24,6 +24,7 @@ type Preferences struct {
 	DefaultModel    string   `yaml:"default_model"`
 	AutoExecuteSafe bool     `yaml:"auto_execute_safe"`
 	PreviewMode     string   `yaml:"preview_mode"`
+	Verbose         bool     `yaml:"verbose"`
 	TimeoutSeconds  int      `yaml:"timeout"`
 	FallbackModels  []string `yaml:"fallback_models"`
 }

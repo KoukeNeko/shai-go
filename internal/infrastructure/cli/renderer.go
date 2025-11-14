@@ -8,18 +8,21 @@ import (
 )
 
 // RenderResponse prints the response in a friendly, ASCII-only format.
-func RenderResponse(resp domain.QueryResponse) {
-	fmt.Println("SHAI analysis complete")
-	fmt.Printf("Directory: %s\n", resp.ContextInformation.WorkingDir)
-	fmt.Printf("Tools: %s\n", strings.Join(resp.ContextInformation.AvailableTools, ", "))
-	if resp.FromCache {
-		fmt.Println("Note: result served from cache")
-	}
-	if resp.ModelUsed != "" {
-		fmt.Printf("Model: %s\n", resp.ModelUsed)
+// If verbose is true, shows detailed context information (directory, tools, model).
+func RenderResponse(resp domain.QueryResponse, verbose bool) {
+	if verbose {
+		fmt.Println("SHAI analysis complete")
+		fmt.Printf("Directory: %s\n", resp.ContextInformation.WorkingDir)
+		fmt.Printf("Tools: %s\n", strings.Join(resp.ContextInformation.AvailableTools, ", "))
+		if resp.FromCache {
+			fmt.Println("Note: result served from cache")
+		}
+		if resp.ModelUsed != "" {
+			fmt.Printf("Model: %s\n", resp.ModelUsed)
+		}
+		fmt.Println()
 	}
 
-	fmt.Println()
 	fmt.Println("Generated Command:")
 	fmt.Printf("  %s\n", resp.Command)
 
