@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -122,9 +123,21 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	}
 	fmt.Fprintf(out, "✓ Backup created: %s\n", backupFile)
 
-	// Add source line to RC file
-	sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
-	integrationBlock := fmt.Sprintf("\n%s\n%s\n%s\n", shaiMarkerStart, sourceLine, shaiMarkerEnd)
+	// Detect shai binary path
+	shaiBinPath := detectShaiBinaryPath()
+
+	// Add source line to RC file with optional SHAI_BIN export
+	var integrationBlock string
+	if shaiBinPath != "" && shaiBinPath != "shai" {
+		// shai is not in PATH, need to export SHAI_BIN
+		exportLine := fmt.Sprintf("export SHAI_BIN=\"%s\"", shaiBinPath)
+		sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
+		integrationBlock = fmt.Sprintf("\n%s\n%s\n%s\n%s\n", shaiMarkerStart, exportLine, sourceLine, shaiMarkerEnd)
+	} else {
+		// shai is in PATH or use default
+		sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
+		integrationBlock = fmt.Sprintf("\n%s\n%s\n%s\n", shaiMarkerStart, sourceLine, shaiMarkerEnd)
+	}
 
 	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_WRONLY, domain.SecureFilePermissions)
 	if err != nil {
@@ -137,6 +150,11 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	}
 
 	fmt.Fprintf(out, "✓ Added integration to %s\n", rcFile)
+
+	if shaiBinPath != "" && shaiBinPath != "shai" {
+		fmt.Fprintf(out, "✓ Set SHAI_BIN=%s\n", shaiBinPath)
+	}
+
 	fmt.Fprintf(out, "\n✨ Installation complete!\n\n")
 	fmt.Fprintf(out, "To activate, run:\n")
 	fmt.Fprintf(out, "  source %s\n\n", rcFile)
@@ -201,4 +219,32 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, data, domain.SecureFilePermissions)
+}
+
+func detectShaiBinaryPath() string {
+	// Try to find shai in PATH first
+	if path, err := exec.LookPath("shai"); err == nil {
+		// shai is in PATH, return empty to use default
+		if absPath, err := filepath.Abs(path); err == nil {
+			// Check if it's in a standard system path
+			if strings.HasPrefix(absPath, "/usr/local/bin") ||
+				strings.HasPrefix(absPath, "/usr/bin") ||
+				strings.HasPrefix(absPath, "/bin") {
+				return "" // Use default "shai" command
+			}
+			// It's in PATH but not a standard location, return the full path
+			return absPath
+		}
+		return "" // Use default if we can't get absolute path
+	}
+
+	// shai not in PATH, try to find the current executable
+	if exePath, err := os.Executable(); err == nil {
+		if absPath, err := filepath.Abs(exePath); err == nil {
+			return absPath
+		}
+	}
+
+	// Fallback to default
+	return ""
 }
