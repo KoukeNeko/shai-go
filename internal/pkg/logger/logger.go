@@ -22,13 +22,22 @@ func (l *StdLogger) Debug(msg string, fields map[string]interface{}) {
 }
 
 func (l *StdLogger) Info(msg string, fields map[string]interface{}) {
+	if !l.verbose {
+		return
+	}
 	log.Println("[INFO]", msg, fields)
 }
 
 func (l *StdLogger) Warn(msg string, fields map[string]interface{}) {
+	if !l.verbose {
+		return
+	}
 	log.Println("[WARN]", msg, fields)
 }
 
 func (l *StdLogger) Error(msg string, err error, fields map[string]interface{}) {
+	if !l.verbose {
+		return
+	}
 	log.Println("[ERROR]", msg, err, fields)
 }
