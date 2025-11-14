@@ -54,7 +54,6 @@ func (s *HealthService) Run(ctx context.Context) (domain.HealthReport, error) {
 		checks = append(checks, shellDiagnostics(s.ShellIntegrator, domain.ShellBash))
 	}
 
-	checks = append(checks, apiCheck(cfg.Models))
 	checks = append(checks, guardrailFileCheck(cfg.Security.RulesFile))
 
 	return domain.HealthReport{Checks: checks}, nil
@@ -88,24 +87,6 @@ func shellDiagnostics(installer ports.ShellIntegrator, shell domain.ShellName) d
 		return ok(name, fmt.Sprintf("hook active (%s)", status.RCFile))
 	}
 	return warn(name, "integration not installed")
-}
-
-func apiCheck(models []domain.ModelDefinition) domain.HealthCheck {
-	var missingKeys []string
-	for _, model := range models {
-		// Skip models that don't require authentication
-		if model.AuthEnvVar == "" {
-			continue
-		}
-		// Check if the specified environment variable is set
-		if os.Getenv(model.AuthEnvVar) == "" {
-			missingKeys = append(missingKeys, model.AuthEnvVar)
-		}
-	}
-	if len(missingKeys) > 0 {
-		return warn("API keys", fmt.Sprintf("missing: %s", strings.Join(missingKeys, ", ")))
-	}
-	return ok("API keys", "all configured keys present")
 }
 
 func guardrailFileCheck(path string) domain.HealthCheck {
