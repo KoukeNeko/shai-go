@@ -7,6 +7,15 @@ import (
 	"github.com/doeshing/shai-go/internal/domain"
 )
 
+// stripMarkdownFormatting removes markdown code block backticks from command output.
+func stripMarkdownFormatting(cmd string) string {
+	// Remove leading/trailing backticks and whitespace
+	cleaned := strings.TrimSpace(cmd)
+	cleaned = strings.Trim(cleaned, "`")
+	cleaned = strings.TrimSpace(cleaned)
+	return cleaned
+}
+
 // RenderResponse prints the response in a friendly, ASCII-only format.
 // If verbose is false, only outputs the command (for shell integration).
 // If verbose is true, shows detailed context information.
@@ -17,7 +26,9 @@ func RenderResponse(resp domain.QueryResponse, verbose bool) {
 
 	// If not verbose and not blocked, only output the command
 	if !verbose && !isBlocked {
-		fmt.Println(resp.Command)
+		// Strip markdown code block formatting (backticks)
+		cleanCmd := stripMarkdownFormatting(resp.Command)
+		fmt.Println(cleanCmd)
 		return
 	}
 
