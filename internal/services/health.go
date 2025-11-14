@@ -91,18 +91,21 @@ func shellDiagnostics(installer ports.ShellIntegrator, shell domain.ShellName) d
 }
 
 func apiCheck(models []domain.ModelDefinition) domain.HealthCheck {
+	var missingKeys []string
 	for _, model := range models {
-		if isAnthropicEndpoint(model.Endpoint) {
-			if envMissing(model.AuthEnvVar, "ANTHROPIC_API_KEY") {
-				return warn("API keys", "ANTHROPIC_API_KEY missing")
-			}
-		} else if isOpenAIEndpoint(model.Endpoint) {
-			if envMissing(model.AuthEnvVar, "OPENAI_API_KEY") {
-				return warn("API keys", "OPENAI_API_KEY missing")
-			}
+		// Skip models that don't require authentication
+		if model.AuthEnvVar == "" {
+			continue
+		}
+		// Check if the specified environment variable is set
+		if os.Getenv(model.AuthEnvVar) == "" {
+			missingKeys = append(missingKeys, model.AuthEnvVar)
 		}
 	}
-	return ok("API keys", "detected for configured providers")
+	if len(missingKeys) > 0 {
+		return warn("API keys", fmt.Sprintf("missing: %s", strings.Join(missingKeys, ", ")))
+	}
+	return ok("API keys", "all configured keys present")
 }
 
 func guardrailFileCheck(path string) domain.HealthCheck {
@@ -114,24 +117,6 @@ func guardrailFileCheck(path string) domain.HealthCheck {
 		return warn("Guardrail file", fmt.Sprintf("missing at %s", expanded))
 	}
 	return ok("Guardrail file", expanded)
-}
-
-func isAnthropicEndpoint(endpoint string) bool {
-	return strings.Contains(endpoint, "anthropic.com")
-}
-
-func isOpenAIEndpoint(endpoint string) bool {
-	return strings.Contains(endpoint, "openai.com")
-}
-
-func envMissing(primary, fallback string) bool {
-	if primary != "" && os.Getenv(primary) != "" {
-		return false
-	}
-	if fallback != "" && os.Getenv(fallback) != "" {
-		return false
-	}
-	return true
 }
 
 func shouldCheck(setting string) bool {
