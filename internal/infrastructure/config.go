@@ -130,7 +130,7 @@ func defaultConfig() domain.Config {
 			Preferences: domain.Preferences{
 				DefaultModel:    "claude-sonnet-4",
 				AutoExecuteSafe: false,
-				PreviewMode:     "always",
+				Verbose:         false,
 				TimeoutSeconds:  30,
 			},
 			Models: []domain.ModelDefinition{

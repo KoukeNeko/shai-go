@@ -211,16 +211,6 @@ func (c *Config) GetTimeoutSeconds() int {
 	return c.Preferences.TimeoutSeconds
 }
 
-// IsPreviewModeAlways checks if preview mode is set to "always"
-func (c *Config) IsPreviewModeAlways() bool {
-	return c.Preferences.PreviewMode == "always"
-}
-
-// IsPreviewModeNever checks if preview mode is set to "never"
-func (c *Config) IsPreviewModeNever() bool {
-	return c.Preferences.PreviewMode == "never"
-}
-
 // ValidateConsistency checks the internal consistency of the configuration
 // Returns an error if there are inconsistencies (e.g., default model doesn't exist)
 func (c *Config) ValidateConsistency() error {

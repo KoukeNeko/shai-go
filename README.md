@@ -150,7 +150,7 @@ config_format_version: "1"
 preferences:
   default_model: claude-sonnet-4
   auto_execute_safe: false
-  preview_mode: always  # always | never
+  verbose: false         # Show detailed context information (directory, tools, model)
   timeout: 30
 
 models:
