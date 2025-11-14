@@ -70,14 +70,33 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 
 	// Get paths
 	shaiDir := filepath.Join(filesystem.UserHomeDir(), ".shai")
+	binDir := filepath.Join(shaiDir, "bin")
 	shellDir := filepath.Join(shaiDir, "shell")
 	rcFile := getRCFile(shell)
 	scriptFile := filepath.Join(shellDir, string(shell)+".sh")
+	targetBinary := filepath.Join(binDir, "shai")
 
-	// Create ~/.shai/shell directory
+	// Create ~/.shai/bin and ~/.shai/shell directories
+	if err := os.MkdirAll(binDir, domain.DirectoryPermissions); err != nil {
+		return fmt.Errorf("create bin directory: %w", err)
+	}
 	if err := os.MkdirAll(shellDir, domain.DirectoryPermissions); err != nil {
 		return fmt.Errorf("create shell directory: %w", err)
 	}
+
+	// Copy current shai binary to ~/.shai/bin/
+	currentBinary, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get current executable path: %w", err)
+	}
+	if err := copyFile(currentBinary, targetBinary); err != nil {
+		return fmt.Errorf("copy binary to %s: %w", targetBinary, err)
+	}
+	// Make sure it's executable
+	if err := os.Chmod(targetBinary, 0755); err != nil {
+		return fmt.Errorf("set executable permission: %w", err)
+	}
+	fmt.Fprintf(out, "✓ Installed binary: %s\n", targetBinary)
 
 	// Copy shell script from embedded assets
 	var scriptContent []byte
@@ -123,24 +142,12 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	}
 	fmt.Fprintf(out, "✓ Backup created: %s\n", backupFile)
 
-	// Detect shai binary path
-	shaiBinPath := detectShaiBinaryPath()
-
-	// Add source line to RC file with optional SHAI_BIN export and PATH
-	var integrationBlock string
-	if shaiBinPath != "" && shaiBinPath != "shai" {
-		// shai is not in PATH, need to export SHAI_BIN and add to PATH
-		shaiBinDir := filepath.Dir(shaiBinPath)
-		exportBinLine := fmt.Sprintf("export SHAI_BIN=\"%s\"", shaiBinPath)
-		exportPathLine := fmt.Sprintf("export PATH=\"%s:$PATH\"", shaiBinDir)
-		sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
-		integrationBlock = fmt.Sprintf("\n%s\n%s\n%s\n%s\n%s\n",
-			shaiMarkerStart, exportBinLine, exportPathLine, sourceLine, shaiMarkerEnd)
-	} else {
-		// shai is in PATH or use default
-		sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
-		integrationBlock = fmt.Sprintf("\n%s\n%s\n%s\n", shaiMarkerStart, sourceLine, shaiMarkerEnd)
-	}
+	// Always export PATH to ~/.shai/bin and SHAI_BIN
+	exportBinLine := fmt.Sprintf("export SHAI_BIN=\"%s\"", targetBinary)
+	exportPathLine := fmt.Sprintf("export PATH=\"%s:$PATH\"", binDir)
+	sourceLine := fmt.Sprintf("[ -f %s ] && source %s", scriptFile, scriptFile)
+	integrationBlock := fmt.Sprintf("\n%s\n%s\n%s\n%s\n%s\n",
+		shaiMarkerStart, exportBinLine, exportPathLine, sourceLine, shaiMarkerEnd)
 
 	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_WRONLY, domain.SecureFilePermissions)
 	if err != nil {
@@ -153,24 +160,16 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	}
 
 	fmt.Fprintf(out, "✓ Added integration to %s\n", rcFile)
-
-	if shaiBinPath != "" && shaiBinPath != "shai" {
-		shaiBinDir := filepath.Dir(shaiBinPath)
-		fmt.Fprintf(out, "✓ Set SHAI_BIN=%s\n", shaiBinPath)
-		fmt.Fprintf(out, "✓ Added %s to PATH\n", shaiBinDir)
-	}
+	fmt.Fprintf(out, "✓ Added %s to PATH\n", binDir)
 
 	fmt.Fprintf(out, "\n✨ Installation complete!\n\n")
 
 	// Show configuration file locations
-	shaiConfigDir := filepath.Join(filesystem.UserHomeDir(), ".shai")
 	fmt.Fprintf(out, "Configuration:\n")
-	fmt.Fprintf(out, "  Config:     %s/config.yaml\n", shaiConfigDir)
-	fmt.Fprintf(out, "  Guardrail:  %s/guardrail.yaml\n", shaiConfigDir)
+	fmt.Fprintf(out, "  Binary:     %s\n", targetBinary)
+	fmt.Fprintf(out, "  Config:     %s/config.yaml\n", shaiDir)
+	fmt.Fprintf(out, "  Guardrail:  %s/guardrail.yaml\n", shaiDir)
 	fmt.Fprintf(out, "  Shell:      %s\n", scriptFile)
-	if shaiBinPath != "" && shaiBinPath != "shai" {
-		fmt.Fprintf(out, "  Binary:     %s\n", shaiBinPath)
-	}
 
 	fmt.Fprintf(out, "\nTo activate, run:\n")
 	fmt.Fprintf(out, "  source %s\n\n", rcFile)
