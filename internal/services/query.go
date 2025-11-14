@@ -91,7 +91,7 @@ func (s *QueryService) Run(req domain.QueryRequest) (domain.QueryResponse, error
 		return resp, nil
 	}
 
-	execResult, err := s.Executor.Execute(ctx, aiResp.Command, false)
+	execResult, err := s.Executor.Execute(ctx, aiResp.Command)
 	resp.ExecutionResult = &execResult
 	if err != nil {
 		s.persistHistory(req, modelDef, resp, &execResult)
@@ -108,10 +108,6 @@ func (s *QueryService) decideExecution(
 	risk domain.RiskAssessment,
 	command string,
 ) (bool, error) {
-	if req.PreviewOnly {
-		return false, nil
-	}
-
 	switch risk.Action {
 	case domain.ActionBlock:
 		return false, fmt.Errorf("command blocked by guardrail: %s", command)

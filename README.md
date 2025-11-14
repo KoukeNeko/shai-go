@@ -72,13 +72,10 @@ shai "show current directory contents"
 ### Basic Usage
 
 ```bash
-# Generate and execute commands
+# Generate commands (shows preview with confirmation prompt)
 shai "list all docker containers with memory usage"
 
-# Preview without executing
-shai "delete all .log files" --preview-only
-
-# Auto-execute safe commands
+# Auto-execute safe commands (skip confirmation for safe operations)
 shai "show git status" --auto-execute
 
 # Copy to clipboard
@@ -111,7 +108,6 @@ shai "troubleshoot" --debug
 
 ```bash
 -m, --model <name>       Override AI model
--p, --preview-only       Show command without executing
 -a, --auto-execute       Execute without confirmation (respects guardrails)
 -c, --copy               Copy to clipboard instead of executing
 --with-git-status        Include git repository status

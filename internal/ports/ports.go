@@ -69,9 +69,8 @@ type SecurityService interface {
 }
 
 // CommandExecutor runs shell commands in the configured shell environment.
-// It can operate in preview mode (dry-run) or actually execute commands.
 type CommandExecutor interface {
-	Execute(ctx context.Context, command string, previewOnly bool) (domain.ExecutionResult, error)
+	Execute(ctx context.Context, command string) (domain.ExecutionResult, error)
 }
 
 // ConfirmationPrompter handles interactive user confirmations for risky operations.

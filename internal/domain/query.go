@@ -7,7 +7,6 @@ type QueryRequest struct {
 	Context         context.Context
 	Prompt          string
 	ModelOverride   string
-	PreviewOnly     bool
 	AutoExecute     bool
 	CopyToClipboard bool
 	WithGitStatus   bool

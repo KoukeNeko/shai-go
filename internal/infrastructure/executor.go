@@ -29,14 +29,7 @@ func NewLocalExecutor(shell string) *LocalExecutor {
 }
 
 // Execute implements ports.CommandExecutor.
-func (e *LocalExecutor) Execute(ctx context.Context, command string, previewOnly bool) (domain.ExecutionResult, error) {
-	if previewOnly {
-		return domain.ExecutionResult{
-			Ran:         false,
-			DryRunNotes: "preview mode enabled",
-		}, nil
-	}
-
+func (e *LocalExecutor) Execute(ctx context.Context, command string) (domain.ExecutionResult, error) {
 	c := exec.CommandContext(ctx, e.shell, "-c", command)
 	var stdout, stderr bytes.Buffer
 	c.Stdout = &stdout

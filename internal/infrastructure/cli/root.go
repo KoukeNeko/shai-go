@@ -58,7 +58,6 @@ func NewRootCmd(ctx context.Context, opts Options) (*cobra.Command, error) {
 func newQueryCommand(container *app.Container) *cobra.Command {
 	var (
 		model       string
-		previewOnly bool
 		autoExecute bool
 		copyCmd     bool
 		withGit     bool
@@ -91,7 +90,6 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 				Context:         ctx,
 				Prompt:          strings.Join(args, " "),
 				ModelOverride:   model,
-				PreviewOnly:     previewOnly,
 				AutoExecute:     autoExecute,
 				CopyToClipboard: copyCmd,
 				WithGitStatus:   withGit,
@@ -110,7 +108,6 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&model, "model", "m", "", "Override model name (default from config)")
-	cmd.Flags().BoolVarP(&previewOnly, "preview-only", "p", false, "Only preview command, do not execute")
 	cmd.Flags().BoolVarP(&autoExecute, "auto-execute", "a", false, "Auto execute without extra confirmation (still subject to guardrails)")
 	cmd.Flags().BoolVarP(&copyCmd, "copy", "c", false, "Copy generated command to clipboard")
 	cmd.Flags().BoolVar(&withGit, "with-git-status", false, "Force include git status")
