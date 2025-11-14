@@ -156,7 +156,18 @@ func runInstall(out, errOut io.Writer, shellFlag string) error {
 	}
 
 	fmt.Fprintf(out, "\n✨ Installation complete!\n\n")
-	fmt.Fprintf(out, "To activate, run:\n")
+
+	// Show configuration file locations
+	shaiConfigDir := filepath.Join(filesystem.UserHomeDir(), ".shai")
+	fmt.Fprintf(out, "Configuration:\n")
+	fmt.Fprintf(out, "  Config:     %s/config.yaml\n", shaiConfigDir)
+	fmt.Fprintf(out, "  Guardrail:  %s/guardrail.yaml\n", shaiConfigDir)
+	fmt.Fprintf(out, "  Shell:      %s\n", scriptFile)
+	if shaiBinPath != "" && shaiBinPath != "shai" {
+		fmt.Fprintf(out, "  Binary:     %s\n", shaiBinPath)
+	}
+
+	fmt.Fprintf(out, "\nTo activate, run:\n")
 	fmt.Fprintf(out, "  source %s\n\n", rcFile)
 	fmt.Fprintf(out, "Usage:\n")
 	fmt.Fprintf(out, "  # list all docker containers\n")

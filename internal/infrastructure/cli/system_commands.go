@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -10,6 +13,7 @@ import (
 
 	"github.com/doeshing/shai-go/internal/app"
 	"github.com/doeshing/shai-go/internal/domain"
+	"github.com/doeshing/shai-go/internal/pkg/filesystem"
 	"github.com/doeshing/shai-go/internal/version"
 )
 
@@ -109,6 +113,9 @@ func runHealthDiagnostics(cmd *cobra.Command, out io.Writer, container *app.Cont
 	// Display report even if there were errors
 	displayHealthReport(out, report)
 
+	// Display configuration file locations
+	displayConfigLocations(out, container)
+
 	if err != nil {
 		return fmt.Errorf("diagnostics completed with errors: %w", err)
 	}
@@ -122,5 +129,26 @@ func displayHealthReport(out io.Writer, report domain.HealthReport) {
 			strings.ToUpper(string(check.Status)),
 			check.Name,
 			check.Details)
+	}
+}
+
+func displayConfigLocations(out io.Writer, container *app.Container) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Configuration Files:")
+
+	// Load config to get paths
+	ctx := context.Background()
+	if cfg, err := container.ConfigProvider.Load(ctx); err == nil {
+		// Determine config file path - use SHAI_CONFIG env or default
+		configPath := os.Getenv("SHAI_CONFIG")
+		if configPath == "" {
+			configPath = filepath.Join(filesystem.UserHomeDir(), ".shai", "config.yaml")
+		}
+		fmt.Fprintf(out, "  Config:     %s\n", configPath)
+
+		// Show guardrail file if configured
+		if cfg.Security.RulesFile != "" {
+			fmt.Fprintf(out, "  Guardrail:  %s\n", cfg.Security.RulesFile)
+		}
 	}
 }
