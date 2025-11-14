@@ -25,9 +25,9 @@ _shai_handle_debug() {
     history -d $((HISTCMD)) 2>/dev/null || true
 
     # Generate command and capture output (requires verbose: false in config)
-    # Spinner is shown by the shai binary itself
+    # Spinner is shown by the shai binary itself (outputs to /dev/tty)
     local generated_cmd
-    generated_cmd=$("$(_shai_command_bin)" query "$query" 2>/dev/null)
+    generated_cmd=$("$(_shai_command_bin)" query "$query")
 
     if [[ -n "$generated_cmd" ]]; then
       # Put generated command in readline buffer for user to review/execute

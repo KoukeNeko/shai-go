@@ -35,9 +35,9 @@ function _shai_accept_line() {
     local query="${buffer#\#}"
 
     # Generate command and capture output (requires verbose: false in config)
-    # Spinner is shown by the shai binary itself
+    # Spinner is shown by the shai binary itself (outputs to /dev/tty)
     local generated_cmd
-    generated_cmd=$(command "$(_shai_command_bin)" query "$query" 2>/dev/null)
+    generated_cmd=$(command "$(_shai_command_bin)" query "$query")
 
     if [[ -n "$generated_cmd" ]]; then
       # Clear the input line and put generated command in buffer

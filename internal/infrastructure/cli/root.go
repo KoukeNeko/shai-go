@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -104,9 +105,15 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 
 			// Show spinner during query execution (only in non-verbose mode)
 			var spinner *Spinner
+			var tty *os.File
 			if !cfg.Preferences.Verbose {
-				spinner = NewSpinner(cmd.ErrOrStderr())
-				spinner.Start()
+				// Try to open /dev/tty for spinner output to bypass stderr redirection
+				var err error
+				tty, err = os.OpenFile("/dev/tty", os.O_WRONLY, 0)
+				if err == nil {
+					spinner = NewSpinner(tty)
+					spinner.Start()
+				}
 			}
 
 			resp, queryErr := container.QueryService.Run(req)
@@ -114,6 +121,9 @@ func newQueryCommand(container *app.Container) *cobra.Command {
 			// Stop spinner before rendering response
 			if spinner != nil {
 				spinner.Stop()
+			}
+			if tty != nil {
+				tty.Close()
 			}
 
 			RenderResponse(resp, cfg.Preferences.Verbose)
