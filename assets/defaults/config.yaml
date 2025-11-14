@@ -22,6 +22,14 @@ models:
     auth_env_var: ANTHROPIC_API_KEY
     model_id: claude-3-5-sonnet-20240620
     max_tokens: 1024
+    api_format:
+      auth_header_name: x-api-key
+      auth_header_prefix: ""
+      system_message_mode: separate
+      content_wrapper: anthropic
+      response_json_path: content[0].text
+      extra_headers:
+        anthropic-version: "2023-06-01"
     prompt:
       - role: system
         content: |
