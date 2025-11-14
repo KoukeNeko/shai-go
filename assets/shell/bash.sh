@@ -24,9 +24,27 @@ _shai_handle_debug() {
     local query="${cmd#\#}"
     history -d $((HISTCMD)) 2>/dev/null || true
 
+    # Start background process for animation
+    local animation_pid
+    (
+      local frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+      local i=0
+      while true; do
+        printf "\r${frames[$((i % 10))]}"
+        sleep 0.08
+        ((i++))
+      done
+    ) &
+    animation_pid=$!
+
     # Generate command and capture output (requires verbose: false in config)
     local generated_cmd
     generated_cmd=$("$(_shai_command_bin)" query "$query" 2>/dev/null)
+
+    # Stop animation
+    kill $animation_pid 2>/dev/null
+    wait $animation_pid 2>/dev/null
+    printf "\r\033[K"  # Clear the animation line
 
     if [[ -n "$generated_cmd" ]]; then
       # Put generated command in readline buffer for user to review/execute
